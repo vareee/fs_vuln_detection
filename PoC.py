@@ -11,6 +11,9 @@ class TranscriptError(Exception):
 class CrossTranscriptError(Exception):
     pass
 
+class CrossRoundError(Exception):
+    pass
+
 class ObjectCategory(Enum):
     Commitment = "commitment"
     Pubkey = "pubkey"
@@ -25,6 +28,7 @@ class TranscriptInspector:
         self.challenges: Dict[str, Set[str]] = {}
         self.index: int = 0
         self.round: int = 0
+        self.challenges_mul: Dict[str, Set[str]] = {}
 
     class TaggedValue:
         def __init__(self, value, tid):
@@ -70,6 +74,16 @@ class TranscriptInspector:
         
         self.elements[name] = (subject, category, self.index, self.round)
         self.index += 1
+        self.challenges_mul[name] = set()
+
+    def imitate_mul(self, object_name: str, challenge_name: str):
+        if object_name not in self.elements:
+            raise ValueError(f"Unknown object '{object_name}'")
+        
+        if challenge_name not in self.challenges:
+            raise ValueError(f"Unknown challenge '{challenge_name}'")
+        
+        self.challenges_mul[object_name].add(challenge_name)
 
     def record_challenge(self, challenge_name: str, used_names: List[str]):
         used_set = set(used_names)
@@ -101,6 +115,27 @@ class TranscriptInspector:
                             f"was added at index {index} after challenge '{challenge_name}' "
                             f"(index {challenge_index}) but was NOT included in that challenge."
                         )
+                    
+    def check_cross_round_interaction(self, object1: str, object2: str):
+        _, _, _, round_1 = self.elements[object1]
+        _, _, _, round_2 = self.elements[object2]
+
+        if round_1 == round_2:
+            return
+
+        mul_1 = self.challenges_mul.get(object1, set())
+        mul_2 = self.challenges_mul.get(object2, set())
+        other_round_challenges_1 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_2}
+        other_round_challenges_2 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_1}
+
+        safe_1 = not mul_1.isdisjoint(other_round_challenges_1)
+        safe_2 = not mul_2.isdisjoint(other_round_challenges_2)
+
+        if not (safe_1 or safe_2):
+            raise CrossRoundError(
+                f"Objects '{object1}' and '{object2}' from different rounds interact "
+                f"but neither of them is multiplied by a challenge from the other's round!"
+            )
 
 
 curve = Curve.get_curve("secp256k1")
@@ -159,7 +194,7 @@ except TranscriptError as e:
 
 print("----------------")
 
-# example of cross transcript interaction
+# example of cross transcript interaction with error
 transcript1 = TranscriptInspector()
 
 a1 = random.randint(1, curve_order-1)
@@ -200,4 +235,23 @@ try:
     print("Verifier returned:", valid)
 
 except CrossTranscriptError as e:
+    print("Detected:", e)
+
+
+print("----------------")
+
+# example of cross round object ineraction with error
+ti = TranscriptInspector()
+ti.add("A1", "prover1", ObjectCategory.Pubkey)
+ti.add("R1", "prover1", ObjectCategory.Commitment)
+ti.record_challenge("c1", ["A1", "R1"])
+
+ti.add("A2", "prover2", ObjectCategory.Pubkey)
+ti.add("R2", "prover2", ObjectCategory.Commitment)
+ti.record_challenge("c2", ["A2", "R2"])
+
+try:
+    ti.check_cross_round_interaction("A1", "A2") 
+    print("No Fiat-Shamir heuristic vulnerability detected.")
+except CrossRoundError as e:
     print("Detected:", e)

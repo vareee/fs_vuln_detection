@@ -11,36 +11,6 @@ class TranscriptError(Exception):
 class CrossTranscriptError(Exception):
     pass
 
-class TaggedValue:
-    def __init__(self, value, tid):
-        self.value = value
-        self.transcript_id = tid
-
-    def _ensure_same_transcript_id(self, other):
-        if isinstance(other, TaggedValue) and self.transcript_id != other.transcript_id:
-            raise CrossTranscriptError(
-                f"Objects from different transcripts cannot interact!"
-            )
-
-    def __add__(self, other):
-        self._ensure_same_transcript_id(other)
-        return TaggedValue(self.value + other.value, self.transcript_id)
-
-    def __sub__(self, other):
-        self._ensure_same_transcript_id(other)
-        return TaggedValue(self.value - other.value, self.transcript_id)
-
-    def __mul__(self, other):
-        if isinstance(other, TaggedValue):
-            self._ensure_same_transcript_id(other)
-            return TaggedValue(self.value * other.value, self.transcript_id)
-        
-        return TaggedValue(self.value * other, self.transcript_id)
-
-    def __rmul__(self, other):
-        return self.__mul__(other)
-
-
 class ObjectCategory(Enum):
     Commitment = "commitment"
     Pubkey = "pubkey"
@@ -54,15 +24,51 @@ class TranscriptInspector:
         self.elements: Dict[str, Tuple[str, ObjectCategory, int]] = {}
         self.challenges: Dict[str, Set[str]] = {}
         self.index: int = 0
+        self.round: int = 0
+
+    class TaggedValue:
+        def __init__(self, value, tid):
+            self.value = value
+            self.transcript_id = tid
+
+        def _ensure_same_transcript_id(self, other):
+            if isinstance(other, TranscriptInspector.TaggedValue) and self.transcript_id != other.transcript_id:
+                raise CrossTranscriptError(
+                    f"Objects from different transcripts cannot interact!"
+                )
+
+        def __add__(self, other):
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+                return TranscriptInspector.TaggedValue(self.value + other.value, self.transcript_id)
+            
+            return TranscriptInspector.TaggedValue(self.value + other, self.transcript_id)
+
+        def __sub__(self, other):
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+                return TranscriptInspector.TaggedValue(self.value - other.value, self.transcript_id)
+            
+            return TranscriptInspector.TaggedValue(self.value - other, self.transcript_id)
+
+        def __mul__(self, other):
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+                return TranscriptInspector.TaggedValue(self.value * other.value, self.transcript_id)
+            
+            return TranscriptInspector.TaggedValue(self.value * other, self.transcript_id)
+
+        def __rmul__(self, other):
+            return self.__mul__(other)
 
     def tag(self, value):
-        return TaggedValue(value, self.transcript_id)
+        return TranscriptInspector.TaggedValue(value, self.transcript_id)
 
     def add(self, name: str, subject: str, category: ObjectCategory):
         if name in self.elements:
             return
         
-        self.elements[name] = (subject, category, self.index)
+        self.elements[name] = (subject, category, self.index, self.round)
         self.index += 1
 
     def record_challenge(self, challenge_name: str, used_names: List[str]):
@@ -75,19 +81,20 @@ class TranscriptInspector:
 
         self.challenges[challenge_name] = used_set
         self.add(challenge_name, subject="verifier", category=ObjectCategory.Challenge)
+        self.round += 1
 
     def analyze_verification(self, verification_used: List[str], challenge_names: List[str]):
         for name in verification_used:
             if name not in self.elements:
                 raise ValueError(f"Verification references unknown element '{name}'!")
 
-            _, category, index = self.elements[name]
+            _, category, index, _ = self.elements[name]
             if category in (ObjectCategory.Commitment, ObjectCategory.Pubkey):
                 for challenge_name in challenge_names:
                     if challenge_name not in self.challenges:
                         raise ValueError(f"Challenge '{challenge_name}' not recorded!")
 
-                    _, _, challenge_index = self.elements[challenge_name]
+                    _, _, challenge_index, _ = self.elements[challenge_name]
                     if index > challenge_index and name not in self.challenges[challenge_name]:
                         raise TranscriptError(
                             f"Element '{name}' (category={category.value}) "

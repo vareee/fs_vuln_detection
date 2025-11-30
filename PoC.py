@@ -241,17 +241,17 @@ except CrossTranscriptError as e:
 print("----------------")
 
 # example of cross round object ineraction with error
-ti = TranscriptInspector()
-ti.add("A1", "prover1", ObjectCategory.Pubkey)
-ti.add("R1", "prover1", ObjectCategory.Commitment)
-ti.record_challenge("c1", ["A1", "R1"])
+transcript_cross_round_vuln = TranscriptInspector()
+transcript_cross_round_vuln.add("A1", "prover1", ObjectCategory.Pubkey)
+transcript_cross_round_vuln.add("R1", "prover1", ObjectCategory.Commitment)
+transcript_cross_round_vuln.record_challenge("c1", ["A1", "R1"])
 
-ti.add("A2", "prover2", ObjectCategory.Pubkey)
-ti.add("R2", "prover2", ObjectCategory.Commitment)
-ti.record_challenge("c2", ["A2", "R2"])
+transcript_cross_round_vuln.add("A2", "prover2", ObjectCategory.Pubkey)
+transcript_cross_round_vuln.add("R2", "prover2", ObjectCategory.Commitment)
+transcript_cross_round_vuln.record_challenge("c2", ["A2", "R2"])
 
 try:
-    ti.check_cross_round_interaction("A1", "A2") 
+    transcript_cross_round_vuln.check_cross_round_interaction("A1", "A2") 
     print("No Fiat-Shamir heuristic vulnerability detected.")
 except CrossRoundError as e:
     print("Detected:", e)

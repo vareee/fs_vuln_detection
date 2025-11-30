@@ -197,11 +197,11 @@ print("----------------")
 # example of cross transcript interaction with error
 transcript1 = TranscriptInspector()
 
-a1 = random.randint(1, curve_order-1)
+a1 = random.randint(1, curve_order - 1)
 A1 = transcript1.tag(G * a1)
 transcript1.add(name="A1", subject="prover", category=ObjectCategory.Pubkey)
 
-k1 = random.randint(1, curve_order-1)
+k1 = random.randint(1, curve_order - 1)
 R1 = transcript1.tag(G * k1)
 transcript1.add(name="R1", subject="prover", category=ObjectCategory.Commitment)
 
@@ -215,11 +215,11 @@ transcript1.add(name="s1", subject="prover", category=ObjectCategory.Message)
 
 transcript2 = TranscriptInspector()
 
-a2 = random.randint(1, curve_order-1)
+a2 = random.randint(1, curve_order - 1)
 A2 = transcript2.tag(G * a2)
 transcript2.add("A2", "prover", ObjectCategory.Pubkey)
 
-k2 = random.randint(1, curve_order-1)
+k2 = random.randint(1, curve_order - 1)
 R2 = transcript2.tag(G * k2)
 transcript2.add("R2", "prover", ObjectCategory.Commitment)
 
@@ -241,17 +241,17 @@ except CrossTranscriptError as e:
 print("----------------")
 
 # example of cross round object ineraction with error
-transcript_cross_round_vuln = TranscriptInspector()
-transcript_cross_round_vuln.add("A1", "prover1", ObjectCategory.Pubkey)
-transcript_cross_round_vuln.add("R1", "prover1", ObjectCategory.Commitment)
-transcript_cross_round_vuln.record_challenge("c1", ["A1", "R1"])
+transcript_cross_round_vulnerability = TranscriptInspector()
+transcript_cross_round_vulnerability.add("A1", "prover1", ObjectCategory.Pubkey)
+transcript_cross_round_vulnerability.add("R1", "prover1", ObjectCategory.Commitment)
+transcript_cross_round_vulnerability.record_challenge("e1", ["A1", "R1"])
 
-transcript_cross_round_vuln.add("A2", "prover2", ObjectCategory.Pubkey)
-transcript_cross_round_vuln.add("R2", "prover2", ObjectCategory.Commitment)
-transcript_cross_round_vuln.record_challenge("c2", ["A2", "R2"])
+transcript_cross_round_vulnerability.add("A2", "prover2", ObjectCategory.Pubkey)
+transcript_cross_round_vulnerability.add("R2", "prover2", ObjectCategory.Commitment)
+transcript_cross_round_vulnerability.record_challenge("e2", ["A2", "R2"])
 
 try:
-    transcript_cross_round_vuln.check_cross_round_interaction("A1", "A2") 
+    transcript_cross_round_vulnerability.check_cross_round_interaction("A1", "A2") 
     print("No Fiat-Shamir heuristic vulnerability detected.")
 except CrossRoundError as e:
     print("Detected:", e)

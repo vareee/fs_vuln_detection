@@ -68,6 +68,7 @@ class TranscriptInspector:
     def tag(self, value):
         return TranscriptInspector.TaggedValue(value, self.transcript_id)
 
+    # add object to transcript (who did it, its category (pubkey, challenge, ...), its number in transcript and round number)
     def add(self, name: str, subject: str, category: ObjectCategory):
         if name in self.elements:
             return
@@ -76,6 +77,7 @@ class TranscriptInspector:
         self.index += 1
         self.challenges_mul[name] = set()
 
+    # func to imitate multiplication of objects (as in PoC there is no direct interaction between objects), used to detect errors in cross-round interaction
     def imitate_mul(self, object_name: str, challenge_name: str):
         if object_name not in self.elements:
             raise ValueError(f"Unknown object '{object_name}'")
@@ -85,29 +87,32 @@ class TranscriptInspector:
         
         self.challenges_mul[object_name].add(challenge_name)
 
+    #func to create a challenge (imitation of it)
     def record_challenge(self, challenge_name: str, used_names: List[str]):
         used_set = set(used_names)
         for n in used_set:
             if n not in self.elements:
                 raise ValueError(
-                    f"Challenge '{challenge_name}' uses unknown element '{n}'!"
+                    f"Challenge '{challenge_name}' uses unknown element '{n}'!" # error if an argument was not declared in transcript
                 )
 
         self.challenges[challenge_name] = used_set
         self.add(challenge_name, subject="verifier", category=ObjectCategory.Challenge)
         self.round += 1
 
+    # func to detect errors in transcript (if used unknown challenges or some public values were declared after challenges)
     def analyze_verification(self, verification_used: List[str], challenge_names: List[str]):
         for name in verification_used:
             if name not in self.elements:
-                raise ValueError(f"Verification references unknown element '{name}'!")
+                raise ValueError(f"Verification references unknown element '{name}'!") # error if some value was not declared it transcript
 
             _, category, index, _ = self.elements[name]
             if category in (ObjectCategory.Commitment, ObjectCategory.Pubkey):
                 for challenge_name in challenge_names:
                     if challenge_name not in self.challenges:
-                        raise ValueError(f"Challenge '{challenge_name}' not recorded!")
-
+                        raise ValueError(f"Challenge '{challenge_name}' not recorded!") # error if some challenge was not declared it transcript
+                    
+                    # check if some public value (pubkey or commitment) was delcared after some challenge
                     _, _, challenge_index, _ = self.elements[challenge_name]
                     if index > challenge_index and name not in self.challenges[challenge_name]:
                         raise TranscriptError(
@@ -115,7 +120,8 @@ class TranscriptInspector:
                             f"was added at index {index} after challenge '{challenge_name}' "
                             f"(index {challenge_index}) but was NOT included in that challenge."
                         )
-                    
+
+    # func to detect errors in cross-round interaction
     def check_cross_round_interaction(self, object1: str, object2: str):
         _, _, _, round_1 = self.elements[object1]
         _, _, _, round_2 = self.elements[object2]
@@ -123,14 +129,15 @@ class TranscriptInspector:
         if round_1 == round_2:
             return
 
-        mul_1 = self.challenges_mul.get(object1, set())
-        mul_2 = self.challenges_mul.get(object2, set())
-        other_round_challenges_1 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_2}
-        other_round_challenges_2 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_1}
+        mul_1 = self.challenges_mul.get(object1, set()) # list of challenges object1 was multiplied by
+        mul_2 = self.challenges_mul.get(object2, set()) # list of challenges object2 was multiplied by
+        other_round_challenges_1 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_2} # list of challenges in round of object2
+        other_round_challenges_2 = {challenge for challenge in self.challenges if self.elements[challenge][3] == round_1} # list of challenges in round of object1
 
-        safe_1 = not mul_1.isdisjoint(other_round_challenges_1)
-        safe_2 = not mul_2.isdisjoint(other_round_challenges_2)
+        safe_1 = not mul_1.isdisjoint(other_round_challenges_1) # check if object1 was multiplied by any challenge in round of object2
+        safe_2 = not mul_2.isdisjoint(other_round_challenges_2)# check if object2 was multiplied by any challenge in round of object1
 
+        #if no then raise exception
         if not (safe_1 or safe_2):
             raise CrossRoundError(
                 f"Objects '{object1}' and '{object2}' from different rounds interact "

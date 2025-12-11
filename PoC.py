@@ -106,6 +106,11 @@ class TranscriptInspector:
     #func to create a challenge (imitation of it)
     def record_challenge(self, challenge_name: str, used_names: List[str], value):
         used_set = set(used_names)
+        if len(used_names) < len(self.elements) - len(self.challenges):
+            raise ValueError(
+                    f"Not every prover's message was included in the challenge!" # error if plaintext was not hashed in the first challenge
+                )
+        
         pt_found = False
         for n in used_set:
             if n not in self.elements:

@@ -106,10 +106,19 @@ class TranscriptInspector:
     #func to create a challenge (imitation of it)
     def record_challenge(self, challenge_name: str, used_names: List[str], value):
         used_set = set(used_names)
+        pt_found = False
         for n in used_set:
             if n not in self.elements:
                 raise ValueError(
                     f"Challenge '{challenge_name}' uses unknown element '{n}'!" # error if an argument was not declared in transcript
+                )
+            _, category, _, _,_ = self.elements[n]
+            if category == ObjectCategory.Message:
+                pt_found = True
+        
+        if len(self.challenges) == 0 and not pt_found:
+            raise ValueError(
+                    f"Plaintext was not included in the first challenge!" # error if plaintext was not hashed in the first challenge
                 )
 
         self.challenges[challenge_name] = used_set
@@ -177,7 +186,7 @@ try:
                                     value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
     
     print("No Fiat-Shamir heuristic vulnerability detected.")
-except TranscriptError as e:
+except Exception as e:
     print("Detection:", e)
 
 
@@ -187,14 +196,17 @@ print("----------------")
 try:
     transcript_vulnerability = TranscriptInspector()
 
+    msg_rnd = random.randint(1, curve_order - 1)
+    msg = transcript_vulnerability.add(name="msg", subject="prover1", category=ObjectCategory.Message, value=G*msg_rnd)
+
     a1 = random.randint(1, curve_order - 1)
     A1 = transcript_vulnerability.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G*a1)
 
     k1 = random.randint(1, curve_order - 1)
     R1 = transcript_vulnerability.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G*k1)
 
-    data = serialize_point(A1) + serialize_point(R1)
-    e1 = transcript_vulnerability.record_challenge(challenge_name="e1", used_names=["A1", "R1"],
+    data = serialize_point(A1) + serialize_point(R1) + serialize_point(msg)
+    e1 = transcript_vulnerability.record_challenge(challenge_name="e1", used_names=["A1", "R1", "msg"],
                                                 value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     a2 = random.randint(1, curve_order - 1)
@@ -203,15 +215,13 @@ try:
     k2 = random.randint(1, curve_order - 1)
     R2 = transcript_vulnerability.add(name="R2", subject="prover2", category=ObjectCategory.Commitment, value=G*k2)
 
-    msg_rnd = random.randint(1, curve_order - 1)
-    msg = transcript_vulnerability.add(name="msg", subject="prover2", category=ObjectCategory.Message)
 
     data = serialize_point(A1) + serialize_point(R1) + serialize_point(A2) + serialize_point(R2) + serialize_point(msg)
     e2 = transcript_vulnerability.record_challenge(challenge_name="e2", used_names=["A1", "R1", "A2", "R2", "msg"],
                                                 value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     print("No Fiat-Shamir heuristic vulnerability detected.")
-except TranscriptError as e:
+except Exception as e:
     print("Detected:", e)
 
 
@@ -226,6 +236,9 @@ def bad_verify(R, A, s, e):
 try:
     transcript1 = TranscriptInspector()
 
+    msg1 = transcript1.add(name="msg", subject="prover", 
+                                        category=ObjectCategory.Message, value=message)
+
     a1 = random.randint(1, curve_order - 1)
     A1 = transcript1.add(name="A1", subject="prover", category=ObjectCategory.Pubkey, value=G*a1)
 
@@ -233,7 +246,7 @@ try:
     R1 = transcript1.add(name="R1", subject="prover", category=ObjectCategory.Commitment, value=G*k1)
 
     data = serialize_point(R1) + serialize_point(A1) + message
-    e1 = transcript1.record_challenge(challenge_name="e1", used_names=["R1", "A1"], 
+    e1 = transcript1.record_challenge(challenge_name="e1", used_names=["R1", "A1", "msg"], 
                                       value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     s1 = transcript1.add(name="s1", subject="prover", category=ObjectCategory.Message, 
@@ -242,6 +255,9 @@ try:
 
     transcript2 = TranscriptInspector()
 
+    msg2 = transcript2.add(name="msg", subject="prover", 
+                                        category=ObjectCategory.Message, value=message)
+
     a2 = random.randint(1, curve_order - 1)
     A2 = transcript2.add(name="A2", subject="prover", category=ObjectCategory.Pubkey, value=G*a2)
 
@@ -249,7 +265,7 @@ try:
     R2 = transcript2.add(name="R2", subject="prover", category=ObjectCategory.Commitment, value=G*k2)
 
     data = serialize_point(R2) + serialize_point(A2)
-    e2 = transcript2.record_challenge(challenge_name="e2", used_names=["R2", "A2"], 
+    e2 = transcript2.record_challenge(challenge_name="e2", used_names=["R2", "A2", "msg"], 
                                  value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     s2 = transcript2.add(name="s2", subject="prover", category=ObjectCategory.Message, 
@@ -257,7 +273,7 @@ try:
 
     valid = bad_verify(R2, A2, s1, e1)
     print("No Fiat-Shamir heuristic vulnerability detected.")
-except CrossTranscriptError as e:
+except Exception as e:
     print("Detected:", e)
 
 
@@ -276,8 +292,8 @@ try:
     k = random.randint(1, curve_order - 1)
     R = transcript_round_vuln.add(name="R", subject="prover", category=ObjectCategory.Commitment, value=G*k)
     
-    data = serialize_point(R) + serialize_point(A)
-    e1 = transcript_round_vuln.record_challenge(challenge_name="e1", used_names=["A", "R"], 
+    data = serialize_point(R) + serialize_point(A) + serialize_point(msg)
+    e1 = transcript_round_vuln.record_challenge(challenge_name="e1", used_names=["A", "R", "msg"], 
                                         value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     Z1 = transcript_round_vuln.add(name="Z1", subject="prover", category=ObjectCategory.Response, 
@@ -292,5 +308,5 @@ try:
     
     transcript_round_vuln.check_cross_round_interaction("Z2", "A")
     print("No Fiat-Shamir heuristic vulnerability detected.")
-except CrossRoundError as e:
+except Exception as e:
     print("Detected:", e)

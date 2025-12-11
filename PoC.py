@@ -20,6 +20,7 @@ class ObjectCategory(Enum):
     Message = "message"
     Challenge = "challenge"
     Response = "response"
+    Generator = "generator"
 
 
 class TranscriptInspector:
@@ -112,6 +113,7 @@ class TranscriptInspector:
                 )
         
         pt_found = False
+        generator_found = False
         for n in used_set:
             if n not in self.elements:
                 raise ValueError(
@@ -120,11 +122,18 @@ class TranscriptInspector:
             _, category, _, _,_ = self.elements[n]
             if category == ObjectCategory.Message:
                 pt_found = True
+            elif category == ObjectCategory.Generator:
+                generator_found = True
         
-        if len(self.challenges) == 0 and not pt_found:
-            raise ValueError(
-                    f"Plaintext was not included in the first challenge!" # error if plaintext was not hashed in the first challenge
-                )
+        if len(self.challenges) == 0:
+            if not pt_found:
+                raise ValueError(
+                        f"Plaintext was not included in the first challenge!" # error if plaintext was not hashed in the first challenge
+                    )
+            if not generator_found:
+                raise ValueError(
+                        f"Generator-element was not included in the first challenge!" # error if generator (of a group or an ellicptic curve) was not hashed in the first challenge
+                    )
 
         self.challenges[challenge_name] = used_set
         tagged = self.add(challenge_name, subject="verifier", category=ObjectCategory.Challenge, value=value)

@@ -107,9 +107,14 @@ class TranscriptInspector:
     #func to create a challenge (imitation of it)
     def record_challenge(self, challenge_name: str, used_names: List[str], value):
         used_set = set(used_names)
+        if len(used_set) != len(used_names):
+            raise ValueError(
+                    f"Challenge has two or more similar objects to hash!"
+                )
+        
         if len(used_names) < len(self.elements) - len(self.challenges):
             raise ValueError(
-                    f"Not every prover's message was included in the challenge!" # error if plaintext was not hashed in the first challenge
+                    f"Not every prover's message was included in the challenge!"
                 )
         
         pt_found = False

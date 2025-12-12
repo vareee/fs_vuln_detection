@@ -185,23 +185,25 @@ def serialize_point(point):
 try:
     transcript_safe = TranscriptInspector()
 
+    G1 = transcript_safe.add(name="gen", subject="prover1", category=ObjectCategory.Generator, value=G)
+
     a1 = random.randint(1, curve_order - 1)
-    A1 = transcript_safe.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G*a1)
+    A1 = transcript_safe.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G1*a1)
 
     k1 = random.randint(1, curve_order - 1)
-    R1 = transcript_safe.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G*k1)
+    R1 = transcript_safe.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G1*k1)
     
     a2 = random.randint(1, curve_order - 1)
-    A2 = transcript_safe.add(name="A2", subject="prover2", category=ObjectCategory.Pubkey, value=G*a2)
+    A2 = transcript_safe.add(name="A2", subject="prover2", category=ObjectCategory.Pubkey, value=G1*a2)
 
     k2 = random.randint(1, curve_order - 1)
-    R2 = transcript_safe.add(name="R2", subject="prover2", category=ObjectCategory.Commitment, value=G*k2)
+    R2 = transcript_safe.add(name="R2", subject="prover2", category=ObjectCategory.Commitment, value=G1*k2)
 
     msg_rnd = random.randint(1, curve_order - 1)
-    msg = transcript_safe.add(name="message", subject="prover2", category=ObjectCategory.Message, value=G*msg_rnd)
+    msg = transcript_safe.add(name="message", subject="prover2", category=ObjectCategory.Message, value=G1*msg_rnd)
     
-    data = serialize_point(A1) + serialize_point(R1) + serialize_point(A2) + serialize_point(R2) + serialize_point(msg)
-    e = transcript_safe.record_challenge(challenge_name="e", used_names=["A1","A2","R1","R2","message"],
+    data = serialize_point(A1) + serialize_point(R1) + serialize_point(A2) + serialize_point(R2) + serialize_point(msg) + serialize_point(G1)
+    e = transcript_safe.record_challenge(challenge_name="e", used_names=["A1","A2","R1","R2","message", "gen"],
                                     value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
     
     print("No Fiat-Shamir heuristic vulnerability detected.")
@@ -215,24 +217,26 @@ print("----------------")
 try:
     transcript_vulnerability = TranscriptInspector()
 
+    G1 = transcript_vulnerability.add(name="gen", subject="prover1", category=ObjectCategory.Generator, value=G)
+
     msg_rnd = random.randint(1, curve_order - 1)
-    msg = transcript_vulnerability.add(name="msg", subject="prover1", category=ObjectCategory.Message, value=G*msg_rnd)
+    msg = transcript_vulnerability.add(name="msg", subject="prover1", category=ObjectCategory.Message, value=G1*msg_rnd)
 
     a1 = random.randint(1, curve_order - 1)
-    A1 = transcript_vulnerability.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G*a1)
+    A1 = transcript_vulnerability.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G1*a1)
 
     k1 = random.randint(1, curve_order - 1)
-    R1 = transcript_vulnerability.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G*k1)
+    R1 = transcript_vulnerability.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G1*k1)
 
-    data = serialize_point(A1) + serialize_point(R1) + serialize_point(msg)
-    e1 = transcript_vulnerability.record_challenge(challenge_name="e1", used_names=["A1", "R1", "msg"],
+    data = serialize_point(A1) + serialize_point(R1) + serialize_point(msg) + serialize_point(G1)
+    e1 = transcript_vulnerability.record_challenge(challenge_name="e1", used_names=["A1", "R1", "msg", "gen"],
                                                 value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     a2 = random.randint(1, curve_order - 1)
-    A2 = transcript_vulnerability.add(name="A2", subject="prover2", category=ObjectCategory.Pubkey, value=G*a2,)
+    A2 = transcript_vulnerability.add(name="A2", subject="prover2", category=ObjectCategory.Pubkey, value=G1*a2,)
 
     k2 = random.randint(1, curve_order - 1)
-    R2 = transcript_vulnerability.add(name="R2", subject="prover2", category=ObjectCategory.Commitment, value=G*k2)
+    R2 = transcript_vulnerability.add(name="R2", subject="prover2", category=ObjectCategory.Commitment, value=G1*k2)
 
 
     data = serialize_point(A1) + serialize_point(R1) + serialize_point(A2) + serialize_point(R2) + serialize_point(msg)
@@ -255,17 +259,20 @@ def bad_verify(R, A, s, e):
 try:
     transcript1 = TranscriptInspector()
 
+    G1 = transcript1.add(name="gen", subject="prover1", category=ObjectCategory.Generator, value=G)
+
+    msg_rnd1 = random.randint(1, curve_order - 1)
     msg1 = transcript1.add(name="msg", subject="prover", 
-                                        category=ObjectCategory.Message, value=message)
+                                        category=ObjectCategory.Message, value=G1*msg_rnd1)
 
     a1 = random.randint(1, curve_order - 1)
-    A1 = transcript1.add(name="A1", subject="prover", category=ObjectCategory.Pubkey, value=G*a1)
+    A1 = transcript1.add(name="A1", subject="prover", category=ObjectCategory.Pubkey, value=G1*a1)
 
     k1 = random.randint(1, curve_order - 1)
-    R1 = transcript1.add(name="R1", subject="prover", category=ObjectCategory.Commitment, value=G*k1)
+    R1 = transcript1.add(name="R1", subject="prover", category=ObjectCategory.Commitment, value=G1*k1)
 
-    data = serialize_point(R1) + serialize_point(A1) + message
-    e1 = transcript1.record_challenge(challenge_name="e1", used_names=["R1", "A1", "msg"], 
+    data = serialize_point(R1) + serialize_point(A1) + serialize_point(msg1) + serialize_point(G1)
+    e1 = transcript1.record_challenge(challenge_name="e1", used_names=["R1", "A1", "msg", "gen"], 
                                       value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     s1 = transcript1.add(name="s1", subject="prover", category=ObjectCategory.Message, 
@@ -274,17 +281,20 @@ try:
 
     transcript2 = TranscriptInspector()
 
+    G2 = transcript2.add(name="gen", subject="prover2", category=ObjectCategory.Generator, value=G)
+
+    msg_rnd2 = random.randint(1, curve_order - 1)
     msg2 = transcript2.add(name="msg", subject="prover", 
-                                        category=ObjectCategory.Message, value=message)
+                                        category=ObjectCategory.Message, value=G2*msg_rnd2)
 
     a2 = random.randint(1, curve_order - 1)
-    A2 = transcript2.add(name="A2", subject="prover", category=ObjectCategory.Pubkey, value=G*a2)
+    A2 = transcript2.add(name="A2", subject="prover", category=ObjectCategory.Pubkey, value=G2*a2)
 
     k2 = random.randint(1, curve_order - 1)
-    R2 = transcript2.add(name="R2", subject="prover", category=ObjectCategory.Commitment, value=G*k2)
+    R2 = transcript2.add(name="R2", subject="prover", category=ObjectCategory.Commitment, value=G2*k2)
 
-    data = serialize_point(R2) + serialize_point(A2)
-    e2 = transcript2.record_challenge(challenge_name="e2", used_names=["R2", "A2", "msg"], 
+    data = serialize_point(R2) + serialize_point(A2) + serialize_point(msg2) + serialize_point(G2)
+    e2 = transcript2.record_challenge(challenge_name="e2", used_names=["R2", "A2", "msg", "gen"], 
                                  value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     s2 = transcript2.add(name="s2", subject="prover", category=ObjectCategory.Message, 
@@ -302,17 +312,19 @@ print("----------------")
 try:
     transcript_round_vuln = TranscriptInspector()
 
+    G1 = transcript_round_vuln.add(name="gen", subject="prover2", category=ObjectCategory.Generator, value=G)
+
     msg_rnd = random.randint(1, curve_order - 1)
-    msg = transcript_round_vuln.add(name="msg", subject="prover", category=ObjectCategory.Message, value=G*msg_rnd)
+    msg = transcript_round_vuln.add(name="msg", subject="prover", category=ObjectCategory.Message, value=G1*msg_rnd)
 
     a = random.randint(1, curve_order - 1)
-    A = transcript_round_vuln.add(name="A", subject="prover", category=ObjectCategory.Pubkey, value=G*a)
+    A = transcript_round_vuln.add(name="A", subject="prover", category=ObjectCategory.Pubkey, value=G1*a)
 
     k = random.randint(1, curve_order - 1)
-    R = transcript_round_vuln.add(name="R", subject="prover", category=ObjectCategory.Commitment, value=G*k)
+    R = transcript_round_vuln.add(name="R", subject="prover", category=ObjectCategory.Commitment, value=G1*k)
     
-    data = serialize_point(R) + serialize_point(A) + serialize_point(msg)
-    e1 = transcript_round_vuln.record_challenge(challenge_name="e1", used_names=["A", "R", "msg"], 
+    data = serialize_point(R) + serialize_point(A) + serialize_point(msg) + serialize_point(G1)
+    e1 = transcript_round_vuln.record_challenge(challenge_name="e1", used_names=["A", "R", "msg", "gen"], 
                                         value=int.from_bytes(hashlib.sha256(data).digest(), "big")%curve_order)
 
     Z1 = transcript_round_vuln.add(name="Z1", subject="prover", category=ObjectCategory.Response, 

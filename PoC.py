@@ -66,7 +66,6 @@ class TranscriptInspector:
 
                 return TranscriptInspector.TaggedValue(left + right, self.transcript_id)
             
-            # return TranscriptInspector.TaggedValue(self.value + other, self.transcript_id)
             raise ValueError(
                 "Interaction with an element not from the transcript!"
             )
@@ -84,7 +83,6 @@ class TranscriptInspector:
 
                 return TranscriptInspector.TaggedValue(left - right, self.transcript_id)
             
-            # return TranscriptInspector.TaggedValue(self.value - other, self.transcript_id)
             raise ValueError(
                 "Interaction with an element not from the transcript!"
             )
@@ -102,7 +100,6 @@ class TranscriptInspector:
 
                 return TranscriptInspector.TaggedValue(left * right, self.transcript_id)
             
-            # return TranscriptInspector.TaggedValue(self.value * other, self.transcript_id)
             raise ValueError(
                 "Interaction with an element not from the transcript!"
             )

@@ -48,26 +48,24 @@ class TranscriptInspector:
 
         def _ensure_same_transcript_id(self, other):
             if isinstance(other, TranscriptInspector.TaggedValue) and self.transcript_id != other.transcript_id:
-                raise CrossTranscriptError(
-                    f"Objects from different transcripts cannot interact!"
-                )
+                raise CrossTranscriptError(f"Objects from different transcripts cannot interact!")
 
         def __add__(self, other):
             if isinstance(other, TranscriptInspector.TaggedValue):
                 self._ensure_same_transcript_id(other)
-
                 left = self.value
                 right = other.value
                 while isinstance(left, TranscriptInspector.TaggedValue):
                     left = left.value
                 while isinstance(right, TranscriptInspector.TaggedValue):
                     right = right.value
+            else:
+                left = self.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                right = other
 
-                return TranscriptInspector.TaggedValue(left + right, self.transcript_id)
-            
-            raise ValueError(
-                "Interaction with an element not from the transcript!"
-            )
+            return TranscriptInspector.TaggedValue(left + right, self.transcript_id)     
 
         def __sub__(self, other):
             if isinstance(other, TranscriptInspector.TaggedValue):
@@ -79,12 +77,13 @@ class TranscriptInspector:
                     left = left.value
                 while isinstance(right, TranscriptInspector.TaggedValue):
                     right = right.value
+            else:
+                left = self.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                right = other
 
-                return TranscriptInspector.TaggedValue(left - right, self.transcript_id)
-            
-            raise ValueError(
-                "Interaction with an element not from the transcript!"
-            )
+            return TranscriptInspector.TaggedValue(left - right, self.transcript_id)
 
         def __mul__(self, other):
             if isinstance(other, TranscriptInspector.TaggedValue):
@@ -99,15 +98,111 @@ class TranscriptInspector:
 
                 return TranscriptInspector.TaggedValue(left * right, self.transcript_id)
             
-            raise ValueError(
-                "Interaction with an element not from the transcript!"
-            )
+            raise ValueError("Interaction with an element not from the transcript!")
 
         def __rmul__(self, other):
             return self.__mul__(other)
         
         def __mod__(self, other):
-            return TranscriptInspector.TaggedValue(self.value % other, self.transcript_id)
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+
+                left = self.value
+                right = other.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                while isinstance(right, TranscriptInspector.TaggedValue):
+                    right = right.value
+            else:
+                left = self.value
+                right = other 
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+
+            if isinstance(left, int) and isinstance(right, int):
+                    return TranscriptInspector.TaggedValue(left % right, self.transcript_id)
+            raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be divided by modulo!")
+        
+        def __rmod__(self, other):
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+
+                left = other.value
+                right = self.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                while isinstance(right, TranscriptInspector.TaggedValue):
+                    right = right.value
+            else:
+                left = other
+                right = self.value
+                while isinstance(right, TranscriptInspector.TaggedValue):
+                    right = right.value
+            
+            if isinstance(right, int) and isinstance(left, int):
+                return TranscriptInspector.TaggedValue(left % right, self.transcript_id)
+            raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be used as modulo!")
+        
+        def __int__(self):
+            if isinstance(self.value, int):
+                return self.value
+            
+            raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be used as integer!")
+        
+        def __index__(self):
+            return int(self)
+        
+        def __pow__(self, other, module=None):
+            if isinstance(other, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(other)
+
+                left = self.value
+                right = other.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                while isinstance(right, TranscriptInspector.TaggedValue):
+                    right = right.value
+
+                if module:
+                    while isinstance(module, TranscriptInspector.TaggedValue):
+                        module = module.value
+
+                    return TranscriptInspector.TaggedValue(pow(left, right, module), self.transcript_id)
+                else:
+                    return TranscriptInspector.TaggedValue(pow(left, right), self.transcript_id)
+            
+            raise ValueError("Interaction with an element not from the transcript!")
+        
+        def __rpow__(self, base):
+            if isinstance(base, TranscriptInspector.TaggedValue):
+                self._ensure_same_transcript_id(base)
+
+                left = base.value
+                right = self.value
+                while isinstance(left, TranscriptInspector.TaggedValue):
+                    left = left.value
+                while isinstance(right, TranscriptInspector.TaggedValue):
+                    right = right.value
+                    
+                if isinstance(right, int):
+                    return pow(left, right)
+                
+                raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be used as exponent!")
+            
+            raise ValueError("Interaction with an element not from the transcript!")
+
+        def __iter__(self):
+            if isinstance(self.value, list):
+                return iter(self.value)
+            
+            raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be iterated!")
+        
+        def __getitem__(self, i):
+            if isinstance(self.value, list):
+                return self.value[i]
+            
+            raise TypeError(f"TaggedValue with value of {type(self.value)} cannot be indexed")
+
 
 
     def tag(self, value):
@@ -122,8 +217,12 @@ class TranscriptInspector:
                             f"Element '{name}' (category={category.value}) was added after the first challenge "
                             f"and was not included in that challenge."
                         )
-        
-        tagged = self.tag(value)
+        if isinstance(value, list):
+            temp = [self.tag(x) for x in value]
+        else:
+            temp = value
+
+        tagged = self.tag(temp)
         self.elements[name] = (subject, category, self.index, self.round, tagged)
         if category == ObjectCategory.Constant:
             self.constant_num += 1
@@ -135,22 +234,17 @@ class TranscriptInspector:
     def record_challenge(self, challenge_name: str, used_names: List[str], value):
         used_set = set(used_names)
         if len(used_set) != len(used_names):
-            raise ValueError(
-                    f"Challenge has two or more similar objects to hash!"
-                )
+            raise ValueError(f"Challenge has two or more similar objects to hash!")
 
         if len(used_names) < len(self.elements) - len(self.challenges) - self.constant_num:
-            raise ValueError(
-                    f"Not every prover's message was included in the challenge!"
-                )
+            raise ValueError(f"Not every prover's message was included in the challenge!")
         
         pt_found = False
         generator_found = False
         for n in used_set:
             if n not in self.elements:
-                raise ValueError(
-                    f"Challenge '{challenge_name}' uses unknown element '{n}'!" # error if an argument was not declared in transcript
-                )
+                raise ValueError(f"Challenge '{challenge_name}' uses unknown element '{n}'!") # error if an argument was not declared in transcript
+            
             _, category, _, _,_ = self.elements[n]
             if category == ObjectCategory.Message:
                 pt_found = True
@@ -160,12 +254,12 @@ class TranscriptInspector:
         if len(self.challenges) == 0:
             if not pt_found:
                 raise ValueError(
-                        f"Plaintext was not included in the first challenge!" # error if plaintext was not hashed in the first challenge
-                    )
+                        f"Plaintext was not included in the first challenge!"
+                    ) # error if plaintext was not hashed in the first challenge
             if not generator_found:
                 raise ValueError(
-                        f"Generator-element was not included in the first challenge!" # error if generator (of a group or an ellicptic curve) was not hashed in the first challenge
-                    )
+                    f"Generator-element was not included in the first challenge!"
+                ) # error if generator (of a group or an ellicptic curve) was not hashed in the first challenge
 
         self.challenges[challenge_name] = used_set
         tagged = self.add(challenge_name, subject="verifier", category=ObjectCategory.Challenge, value=value)

@@ -1,0 +1,24 @@
+[package]
+name = "fs_vuln_detection"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "fs_vuln_detection"
+path = "lib.rs"
+
+[[bin]]
+name = "fs_vuln_detection"
+path = "main.rs"
+
+[dependencies]
+uuid = { version = "1.6", features = ["v4"] }
+sha2 = "0.10"
+thiserror = "1.0"
+rand = "0.8"
+num-bigint = { version = "0.4", features = ["rand"] }
+num-traits = "0.2"
+num-integer = "0.1"
+k256 = { version = "0.13", features = ["arithmetic"] }
+elliptic-curve = { version = "0.13", features = ["arithmetic"] }
+hex = "0.4"

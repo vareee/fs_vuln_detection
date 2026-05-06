@@ -1,0 +1,308 @@
+use std::collections::HashMap;
+use rand::Rng;
+use num_bigint::{BigInt, RandBigInt};
+use num_traits::{One, Zero};
+use num_integer::Integer;
+use crate::poc::{
+    mod_inverse, ObjectCategory, TranscriptInspector, Value, H,
+};
+
+
+fn p_modulus() -> BigInt {
+    (BigInt::one() << 255) - BigInt::from(19)
+}
+fn q_order() -> BigInt {
+    (BigInt::one() << 127) - BigInt::one()
+}
+
+fn gexp(b: &BigInt, e: &BigInt) -> BigInt {
+    let q = q_order();
+    let p = p_modulus();
+    let exp = e.mod_floor(&q);
+    if exp.is_zero() {
+        BigInt::one()
+    } else {
+        b.modpow(&exp, &p)
+    }
+}
+
+fn rand_q(rng: &mut impl Rng) -> BigInt {
+    let q = q_order();
+    rng.gen_bigint_range(&BigInt::zero(), &q)
+}
+
+fn extract_int(v: &Value, name: &str) -> Result<BigInt, String> {
+    match v {
+        Value::Integer(b) => Ok(b.clone()),
+        _ => Err(format!("Invalid {} parameter (expected Integer)", name)),
+    }
+}
+fn extract_list(v: &Value, name: &str) -> Result<Vec<BigInt>, String> {
+    match v {
+        Value::List(items) => items.iter().enumerate().map(|(i, x)| match x {
+            Value::Integer(b) => Ok(b.clone()),
+            _ => Err(format!("Invalid {}[{}] (expected Integer)", name, i)),
+        }).collect(),
+        _ => Err(format!("Invalid {} parameter (expected List)", name)),
+    }
+}
+
+pub fn setup(m: i64, n: i64) -> HashMap<String, Value> {
+    let mut rng = rand::thread_rng();
+    let q = q_order();
+    let mut params = HashMap::new();
+    params.insert("m".to_string(), Value::Integer(BigInt::from(m)));
+    params.insert("n".to_string(), Value::Integer(BigInt::from(n)));
+
+    let mn = (m * n) as usize;
+    let g_vec: Vec<Value> = (0..mn).map(|_| Value::Integer(rng.gen_bigint_range(&BigInt::zero(), &q))).collect();
+    let h_vec: Vec<Value> = (0..mn).map(|_| Value::Integer(rng.gen_bigint_range(&BigInt::zero(), &q))).collect();
+    params.insert("g_vec".to_string(), Value::List(g_vec));
+    params.insert("h_vec".to_string(), Value::List(h_vec));
+    params.insert("g".to_string(), Value::Integer(rng.gen_bigint_range(&BigInt::zero(), &q)));
+    params.insert("h".to_string(), Value::Integer(rng.gen_bigint_range(&BigInt::zero(), &q)));
+    params.insert("u".to_string(), Value::Integer(rng.gen_bigint_range(&BigInt::zero(), &q)));
+    params
+}
+
+fn delta(y: &BigInt, z: &BigInt, m: i64, n: i64) -> BigInt {
+    let q = q_order();
+    let mut sum_y = BigInt::zero();
+    let mut y_exp = BigInt::one();
+    for _ in 0..n {
+        sum_y = (&sum_y + &y_exp).mod_floor(&q);
+        y_exp = (&y_exp * y).mod_floor(&q);
+    }
+
+    let two = BigInt::from(2);
+    let sum_2 = (two.modpow(&BigInt::from(n as u64), &q) - BigInt::one()).mod_floor(&q);
+
+    let mut sum_z = BigInt::zero();
+    for j in 1..=m {
+        let z_pow = z.modpow(&BigInt::from((j + 2) as u64), &q);
+        sum_z = (&sum_z + (&z_pow * &sum_2).mod_floor(&q)).mod_floor(&q);
+    }
+
+    let z2 = z.modpow(&BigInt::from(2), &q);
+    let term = ((z - &z2).mod_floor(&q) * &sum_y).mod_floor(&q);
+    (term - sum_z).mod_floor(&q)
+}
+
+pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<String, Value>, String> {
+    let mut t = TranscriptInspector::new();
+    let mut rng = rand::thread_rng();
+    let p = p_modulus();
+    let q = q_order();
+
+    let m_bi = extract_int(params.get("m").ok_or("missing m")?, "m")?;
+    let n_bi = extract_int(params.get("n").ok_or("missing n")?, "n")?;
+    let m: i64 = m_bi.clone().try_into().map_err(|_| "m out of range")?;
+    let n: i64 = n_bi.clone().try_into().map_err(|_| "n out of range")?;
+
+    let g_vec = extract_list(params.get("g_vec").ok_or("missing g_vec")?, "g_vec")?;
+    let h_vec = extract_list(params.get("h_vec").ok_or("missing h_vec")?, "h_vec")?;
+    let g = extract_int(params.get("g").ok_or("missing g")?, "g")?;
+    let h = extract_int(params.get("h").ok_or("missing h")?, "h")?;
+    let u = extract_int(params.get("u").ok_or("missing u")?, "u")?;
+
+    let to_list = |v: &Vec<BigInt>| Value::List(v.iter().cloned().map(Value::Integer).collect());
+
+    t.add("m", "prover", ObjectCategory::Pubkey, Value::Integer(m_bi.clone())).map_err(|e| e.to_string())?;
+    t.add("n", "prover", ObjectCategory::Pubkey, Value::Integer(n_bi.clone())).map_err(|e| e.to_string())?;
+    t.add("g_vec", "prover", ObjectCategory::Pubkey, to_list(&g_vec)).map_err(|e| e.to_string())?;
+    t.add("h_vec", "prover", ObjectCategory::Pubkey, to_list(&h_vec)).map_err(|e| e.to_string())?;
+    t.add("g", "prover", ObjectCategory::Generator, Value::Integer(g.clone())).map_err(|e| e.to_string())?;
+    t.add("h", "prover", ObjectCategory::Generator, Value::Integer(h.clone())).map_err(|e| e.to_string())?;
+    t.add("u", "prover", ObjectCategory::Generator, Value::Integer(u.clone())).map_err(|e| e.to_string())?;
+    t.add("p", "prover", ObjectCategory::Generator, Value::Integer(p.clone())).map_err(|e| e.to_string())?;
+    t.add("q", "prover", ObjectCategory::Generator, Value::Integer(q.clone())).map_err(|e| e.to_string())?;
+
+    let a_l: Vec<BigInt> = (0..n).map(|_| BigInt::from(rng.gen_range(0..2u8))).collect();
+    let a_r: Vec<BigInt> = a_l.iter().map(|a| (a - BigInt::one()).mod_floor(&q)).collect();
+    let s_l: Vec<BigInt> = (0..n).map(|_| rand_q(&mut rng)).collect();
+    let s_r: Vec<BigInt> = (0..n).map(|_| rand_q(&mut rng)).collect();
+    let alpha = rand_q(&mut rng);
+    let ro = rand_q(&mut rng);
+
+    t.add("a_L", "prover", ObjectCategory::Constant, to_list(&a_l)).map_err(|e| e.to_string())?;
+    t.add("a_R", "prover", ObjectCategory::Constant, to_list(&a_r)).map_err(|e| e.to_string())?;
+    t.add("s_L", "prover", ObjectCategory::Constant, to_list(&s_l)).map_err(|e| e.to_string())?;
+    t.add("s_R", "prover", ObjectCategory::Constant, to_list(&s_r)).map_err(|e| e.to_string())?;
+    t.add("alpha", "prover", ObjectCategory::Constant, Value::Integer(alpha.clone())).map_err(|e| e.to_string())?;
+    t.add("ro", "prover", ObjectCategory::Constant, Value::Integer(ro.clone())).map_err(|e| e.to_string())?;
+
+    let mut big_a = gexp(&h, &alpha);
+    let mut big_s = gexp(&h, &ro);
+    for i in 0..n as usize {
+        big_a = (&big_a * gexp(&g_vec[i], &a_l[i])).mod_floor(&p);
+        big_a = (&big_a * gexp(&h_vec[i], &a_r[i])).mod_floor(&p);
+        big_s = (&big_s * gexp(&g_vec[i], &s_l[i])).mod_floor(&p);
+        big_s = (&big_s * gexp(&h_vec[i], &s_r[i])).mod_floor(&p);
+    }
+    t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
+    t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(big_a.to_string().as_bytes());
+    data.extend_from_slice(big_s.to_string().as_bytes());
+
+    let y_val = H(&data, &q);
+    t.record_challenge("y", &["A", "S"], Value::Integer(y_val.clone())).map_err(|e| e.to_string())?;
+
+    let z_val = H(&data, &q);
+    t.record_challenge("z", &["A", "S"], Value::Integer(z_val.clone())).map_err(|e| e.to_string())?;
+
+    let t1 = rand_q(&mut rng);
+    let t2 = rand_q(&mut rng);
+    let tau1 = rand_q(&mut rng);
+    let tau2 = rand_q(&mut rng);
+    t.add("t1", "prover", ObjectCategory::Constant, Value::Integer(t1.clone())).map_err(|e| e.to_string())?;
+    t.add("t2", "prover", ObjectCategory::Constant, Value::Integer(t2.clone())).map_err(|e| e.to_string())?;
+    t.add("tau1", "prover", ObjectCategory::Constant, Value::Integer(tau1.clone())).map_err(|e| e.to_string())?;
+    t.add("tau2", "prover", ObjectCategory::Constant, Value::Integer(tau2.clone())).map_err(|e| e.to_string())?;
+
+    let big_t1 = (gexp(&g, &t1) * gexp(&h, &tau1)).mod_floor(&p);
+    let big_t2 = (gexp(&g, &t2) * gexp(&h, &tau2)).mod_floor(&p);
+    t.add("T1", "prover", ObjectCategory::Commitment, Value::Integer(big_t1.clone())).map_err(|e| e.to_string())?;
+    t.add("T2", "prover", ObjectCategory::Commitment, Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
+
+    data.extend_from_slice(big_t1.to_string().as_bytes());
+    data.extend_from_slice(big_t2.to_string().as_bytes());
+
+    let x_val = H(&data, &q);
+    t.record_challenge("x", &["A", "S", "T1", "T2"], Value::Integer(x_val.clone())).map_err(|e| e.to_string())?;
+
+    let l: Vec<BigInt> = (0..n as usize).map(|i| {
+        ((&a_l[i] - &z_val) + (&s_l[i] * &x_val)).mod_floor(&q)
+    }).collect();
+
+    let z2 = z_val.modpow(&BigInt::from(2), &q);
+    let r: Vec<BigInt> = (0..n as usize).map(|i| {
+        let yi = y_val.modpow(&BigInt::from(i as u64), &q);
+        let twoi = BigInt::from(2).modpow(&BigInt::from(i as u64), &q);
+        let term1 = (&yi * ((&a_r[i] + &z_val) + (&s_r[i] * &x_val))).mod_floor(&q);
+        let term2 = (&z2 * &twoi).mod_floor(&q);
+        (term1 + term2).mod_floor(&q)
+    }).collect();
+
+    let mut t_hat = BigInt::zero();
+    for i in 0..n as usize {
+        t_hat = (t_hat + (&l[i] * &r[i]).mod_floor(&q)).mod_floor(&q);
+    }
+    let mu = (&alpha + &ro * &x_val).mod_floor(&q);
+    let tau_x = rand_q(&mut rng);
+
+    t.add("l", "prover", ObjectCategory::Constant, to_list(&l)).map_err(|e| e.to_string())?;
+    t.add("r", "prover", ObjectCategory::Constant, to_list(&r)).map_err(|e| e.to_string())?;
+    t.add("t_hat", "prover", ObjectCategory::Constant, Value::Integer(t_hat.clone())).map_err(|e| e.to_string())?;
+    t.add("mu", "prover", ObjectCategory::Constant, Value::Integer(mu.clone())).map_err(|e| e.to_string())?;
+    t.add("tau_x", "prover", ObjectCategory::Constant, Value::Integer(tau_x.clone())).map_err(|e| e.to_string())?;
+
+    data.extend_from_slice(t_hat.to_string().as_bytes());
+    data.extend_from_slice(tau_x.to_string().as_bytes());
+    data.extend_from_slice(mu.to_string().as_bytes());
+
+    let w_val = H(&data, &q);
+    t.record_challenge("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], Value::Integer(w_val.clone()))
+        .map_err(|e| e.to_string())?;
+
+    let mn = (m * n) as usize;
+    let y_pow = y_val.modpow(&BigInt::from((m * n) as u64), &q);
+    let y_inv = mod_inverse(&y_pow, &q).ok_or("y has no inverse mod q")?;
+    let h_prime: Vec<BigInt> = (0..mn).map(|i| gexp(&h_vec[i], &y_inv)).collect();
+    let u_prime = gexp(&u, &w_val);
+
+    let neg_mu = (-&mu).mod_floor(&q);
+    let mut p_prime = gexp(&h, &neg_mu);
+    p_prime = (&p_prime * &big_a).mod_floor(&p);
+    p_prime = (&p_prime * gexp(&big_s, &x_val)).mod_floor(&p);
+    let neg_z = (-&z_val).mod_floor(&q);
+    for gi in &g_vec {
+        p_prime = (&p_prime * gexp(gi, &neg_z)).mod_floor(&p);
+    }
+    let mut y_exp = BigInt::one();
+    for i in 0..mn {
+        let exp = (&z_val * &y_exp).mod_floor(&q);
+        p_prime = (&p_prime * gexp(&h_prime[i], &exp)).mod_floor(&p);
+        y_exp = (&y_exp * &y_val).mod_floor(&q);
+    }
+    for j in 1..=m {
+        let z_exp = z_val.modpow(&BigInt::from((j + 1) as u64), &q);
+        let mut two_exp = BigInt::one();
+        for i in 0..n {
+            let idx = ((j - 1) * n + i) as usize;
+            let exp = (&z_exp * &two_exp).mod_floor(&q);
+            p_prime = (&p_prime * gexp(&h_prime[idx], &exp)).mod_floor(&p);
+            two_exp = (&two_exp * BigInt::from(2)).mod_floor(&q);
+        }
+    }
+    p_prime = (&p_prime * gexp(&u_prime, &t_hat)).mod_floor(&p);
+
+    t.add("h_prime", "prover", ObjectCategory::Constant, to_list(&h_prime)).map_err(|e| e.to_string())?;
+    t.add("u_prime", "prover", ObjectCategory::Constant, Value::Integer(u_prime.clone())).map_err(|e| e.to_string())?;
+    t.add("P_prime", "prover", ObjectCategory::Constant, Value::Integer(p_prime.clone())).map_err(|e| e.to_string())?;
+    t.add("pi_BP_IPA", "prover", ObjectCategory::Constant, Value::List(vec![
+        Value::Integer(t_hat.clone()), Value::Integer(mu.clone())
+    ])).map_err(|e| e.to_string())?;
+
+    let rhs_v = (&t_hat - &t1 * &x_val - &t2 * &x_val * &x_val - delta(&y_val, &z_val, m, n)).mod_floor(&q);
+    let rhs_g = (&tau_x - &tau1 * &x_val - &tau2 * &x_val * &x_val).mod_floor(&q);
+
+    let mut big_v: Vec<BigInt> = Vec::new();
+    for j in 1..=m {
+        let (vj, gj) = if j == 1 {
+            let z_exp = z_val.modpow(&BigInt::from(2), &q);
+            let z_inv = mod_inverse(&z_exp, &q).ok_or("z^2 has no inverse mod q")?;
+            ((&rhs_v * &z_inv).mod_floor(&q), (&rhs_g * &z_inv).mod_floor(&q))
+        } else {
+            (BigInt::zero(), BigInt::zero())
+        };
+        let vj_pt = (gexp(&g, &vj) * gexp(&h, &gj)).mod_floor(&p);
+        big_v.push(vj_pt);
+    }
+    t.add("V", "prover", ObjectCategory::Constant,
+          Value::List(big_v.iter().cloned().map(Value::Integer).collect()))
+        .map_err(|e| e.to_string())?;
+
+    let mut proof = HashMap::new();
+    proof.insert("V".to_string(), Value::List(big_v.iter().cloned().map(Value::Integer).collect()));
+    proof.insert("A".to_string(), Value::Integer(big_a));
+    proof.insert("S".to_string(), Value::Integer(big_s));
+    proof.insert("T1".to_string(), Value::Integer(big_t1));
+    proof.insert("T2".to_string(), Value::Integer(big_t2));
+    proof.insert("t_hat".to_string(), Value::Integer(t_hat.clone()));
+    proof.insert("tau_x".to_string(), Value::Integer(tau_x));
+    proof.insert("mu".to_string(), Value::Integer(mu.clone()));
+    proof.insert("PiBP-IPA".to_string(), Value::List(vec![Value::Integer(t_hat), Value::Integer(mu)]));
+    Ok(proof)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forge_is_rejected() {
+        let params = setup(23, 17);
+        let res = forge_bulletproof(&params);
+        assert!(res.is_err(), "expected detector to reject, got {:?}", res.is_ok());
+    }
+
+    #[test]
+    fn delta_smoke() {
+        let y = BigInt::from(5);
+        let z = BigInt::from(3);
+        let v = delta(&y, &z, 2, 4);
+        assert!(v >= BigInt::zero());
+    }
+
+    #[test]
+    fn gexp_inverse_consistency() {
+        let p = p_modulus();
+        let q = q_order();
+        let b = BigInt::from(7);
+        let r = gexp(&b, &BigInt::from(10));
+        assert!(r >= BigInt::zero() && r < p);
+        let _ = q;
+    }
+}

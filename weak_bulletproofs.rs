@@ -4,7 +4,7 @@ use num_bigint::{BigInt, RandBigInt};
 use num_traits::{One, Zero};
 use num_integer::Integer;
 use crate::poc::{
-    mod_inverse, ObjectCategory, TranscriptInspector, Value, H,
+    mod_inverse, ObjectCategory, TranscriptInspector, Value,
 };
 
 
@@ -89,7 +89,7 @@ fn delta(y: &BigInt, z: &BigInt, m: i64, n: i64) -> BigInt {
 }
 
 pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<String, Value>, String> {
-    let mut t = TranscriptInspector::new();
+    let mut t = TranscriptInspector::with_label(b"forged_transcript");
     let mut rng = rand::thread_rng();
     let p = p_modulus();
     let q = q_order();
@@ -142,15 +142,10 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
     t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(big_a.to_string().as_bytes());
-    data.extend_from_slice(big_s.to_string().as_bytes());
-
-    let y_val = H(&data, &q);
-    t.record_challenge("y", &["A", "S"], Value::Integer(y_val.clone())).map_err(|e| e.to_string())?;
-
-    let z_val = H(&data, &q);
-    t.record_challenge("z", &["A", "S"], Value::Integer(z_val.clone())).map_err(|e| e.to_string())?;
+    let y_tag = t.record_challenge("y", &["A", "S"], &q).map_err(|e| e.to_string())?;
+    let z_tag = t.record_challenge("z", &["A", "S"], &q).map_err(|e| e.to_string())?;
+    let y_val = y_tag.as_bigint().cloned().ok_or("y must be Integer")?;
+    let z_val = z_tag.as_bigint().cloned().ok_or("z must be Integer")?;
 
     let t1 = rand_q(&mut rng);
     let t2 = rand_q(&mut rng);
@@ -166,11 +161,8 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("T1", "prover", ObjectCategory::Commitment, Value::Integer(big_t1.clone())).map_err(|e| e.to_string())?;
     t.add("T2", "prover", ObjectCategory::Commitment, Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
 
-    data.extend_from_slice(big_t1.to_string().as_bytes());
-    data.extend_from_slice(big_t2.to_string().as_bytes());
-
-    let x_val = H(&data, &q);
-    t.record_challenge("x", &["A", "S", "T1", "T2"], Value::Integer(x_val.clone())).map_err(|e| e.to_string())?;
+    let x_tag = t.record_challenge("x", &["A", "S", "T1", "T2"], &q).map_err(|e| e.to_string())?;
+    let x_val = x_tag.as_bigint().cloned().ok_or("x must be Integer")?;
 
     let l: Vec<BigInt> = (0..n as usize).map(|i| {
         ((&a_l[i] - &z_val) + (&s_l[i] * &x_val)).mod_floor(&q)
@@ -198,13 +190,9 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("mu", "prover", ObjectCategory::Constant, Value::Integer(mu.clone())).map_err(|e| e.to_string())?;
     t.add("tau_x", "prover", ObjectCategory::Constant, Value::Integer(tau_x.clone())).map_err(|e| e.to_string())?;
 
-    data.extend_from_slice(t_hat.to_string().as_bytes());
-    data.extend_from_slice(tau_x.to_string().as_bytes());
-    data.extend_from_slice(mu.to_string().as_bytes());
-
-    let w_val = H(&data, &q);
-    t.record_challenge("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], Value::Integer(w_val.clone()))
+    let w_tag = t.record_challenge("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], &q)
         .map_err(|e| e.to_string())?;
+    let w_val = w_tag.as_bigint().cloned().ok_or("w must be Integer")?;
 
     let mn = (m * n) as usize;
     let y_pow = y_val.modpow(&BigInt::from((m * n) as u64), &q);
@@ -276,6 +264,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     proof.insert("PiBP-IPA".to_string(), Value::List(vec![Value::Integer(t_hat), Value::Integer(mu)]));
     Ok(proof)
 }
+
 
 #[cfg(test)]
 mod tests {

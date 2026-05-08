@@ -3,8 +3,8 @@ use num_bigint::{BigInt, RandBigInt};
 use num_traits::One;
 use k256::ProjectivePoint;
 use crate::poc::{
-    secp256k1_order, serialize_tagged, ObjectCategory, TaggedValue,
-    TranscriptInspector, Value, H,
+    secp256k1_order, ObjectCategory, TaggedValue,
+    TranscriptInspector, Value,
 };
 
 
@@ -20,59 +20,51 @@ fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> Tagg
 }
 
 pub fn safe_transcript_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new();
+    let mut t = TranscriptInspector::with_label(b"safe_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
     let g = add_generator(&mut t, "gen", "prover1");
 
     let a1 = t.add("a1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detection: {}", e))?;
-    let big_a1 = (&g * &a1).map_err(|e| format!("Detection: {}", e))?;
-    let big_a1 = t.add("A1", "prover1", ObjectCategory::Pubkey, big_a1.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let A1 = (&g * &a1).map_err(|e| format!("Detected: {}", e))?;
+    let A1 = t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = t.add("k1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detection: {}", e))?;
-    let big_r1 = (&g * &k1).map_err(|e| format!("Detection: {}", e))?;
-    let big_r1 = t.add("R1", "prover1", ObjectCategory::Commitment, big_r1.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let R1 = (&g * &k1).map_err(|e| format!("Detected: {}", e))?;
+    let R1 = t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t.add("a2", "prover2", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detection: {}", e))?;
-    let big_a2 = (&g * &a2).map_err(|e| format!("Detection: {}", e))?;
-    let big_a2 = t.add("A2", "prover2", ObjectCategory::Pubkey, big_a2.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let A2 = (&g * &a2).map_err(|e| format!("Detected: {}", e))?;
+    let A2 = t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = t.add("k2", "prover2", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detection: {}", e))?;
-    let big_r2 = (&g * &k2).map_err(|e| format!("Detection: {}", e))?;
-    let big_r2 = t.add("R2", "prover2", ObjectCategory::Commitment, big_r2.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let R2 = (&g * &k2).map_err(|e| format!("Detected: {}", e))?;
+    let R2 = t.add("R2", "prover2", ObjectCategory::Commitment, R2.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd = t.add("msg_rnd", "prover2", ObjectCategory::Constant,
-                        Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detection: {}", e))?;
-    let msg = (&g * &msg_rnd).map_err(|e| format!("Detection: {}", e))?;
+                        Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg = (&g * &msg_rnd).map_err(|e| format!("Detected: {}", e))?;
     let msg = t.add("message", "prover2", ObjectCategory::Message, msg.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+        .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&big_a1));
-    data.extend_from_slice(&serialize_tagged(&big_r1));
-    data.extend_from_slice(&serialize_tagged(&big_a2));
-    data.extend_from_slice(&serialize_tagged(&big_r2));
-    data.extend_from_slice(&serialize_tagged(&msg));
-    data.extend_from_slice(&serialize_tagged(&g));
-
-    let e = H(&data, &n);
-    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], Value::Integer(e))
-        .map_err(|e| format!("Detection: {}", e))?;
+    let _ = (&A1, &R1, &A2, &R2, &msg, &g);
+    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())
 }
 
 pub fn transcript_error_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new();
+    let mut t = TranscriptInspector::with_label(b"transcript_with_order_error");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -86,35 +78,29 @@ pub fn transcript_error_example() -> Result<String, String> {
 
     let a1 = t.add("a1", "prover1", ObjectCategory::Constant,
                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
-    let big_a1 = (&g * &a1).map_err(|e| format!("Detected: {}", e))?;
-    let big_a1 = t.add("A1", "prover1", ObjectCategory::Pubkey, big_a1.value)
+    let A1 = (&g * &a1).map_err(|e| format!("Detected: {}", e))?;
+    let A1 = t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = t.add("k1", "prover1", ObjectCategory::Constant,
                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
-    let big_r1 = (&g * &k1).map_err(|e| format!("Detected: {}", e))?;
-    let big_r1 = t.add("R1", "prover1", ObjectCategory::Commitment, big_r1.value)
+    let R1 = (&g * &k1).map_err(|e| format!("Detected: {}", e))?;
+    let R1 = t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&big_a1));
-    data.extend_from_slice(&serialize_tagged(&big_r1));
-    data.extend_from_slice(&serialize_tagged(&msg));
-    data.extend_from_slice(&serialize_tagged(&g));
-    let e1 = H(&data, &n);
-    t.record_challenge("e1", &["A1", "R1", "msg", "gen"], Value::Integer(e1))
+    let _ = (&A1, &R1, &msg, &g);
+    t.record_challenge("e1", &["A1", "R1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t.add("a2", "prover2", ObjectCategory::Constant,
                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
-    let big_a2 = (&g * &a2).map_err(|e| format!("Detected: {}", e))?;
-    match t.add("A2", "prover2", ObjectCategory::Pubkey, big_a2.value) {
+    let A2 = (&g * &a2).map_err(|e| format!("Detected: {}", e))?;
+    match t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value) {
         Ok(_)  => Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string()),
         Err(e) => Err(format!("Detected: {}", e)),
     }
 }
 
-#[allow(non_snake_case)]
 pub fn cross_transcript_interaction_example() -> Result<String, String> {
     fn bad_verify(
         R: &TaggedValue, A: &TaggedValue, s: &TaggedValue, e: &TaggedValue, G: &TaggedValue,
@@ -128,9 +114,9 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
-    let mut t1 = TranscriptInspector::new();
+    let mut t1 = TranscriptInspector::with_label(b"cross_transcript_1");
     let g1 = add_generator(&mut t1, "gen", "prover");
-    let n_t1 = t1.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
+    let n1 = t1.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd1 = t1.add("msg_rnd1", "prover", ObjectCategory::Constant,
@@ -148,34 +134,29 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let k1 = t1.add("k1", "prover", ObjectCategory::Constant,
                     Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
     let R1 = (&g1 * &k1).map_err(|e| format!("Detected: {}", e))?;
-    let _R1 = t1.add("R1", "prover", ObjectCategory::Commitment, R1.value)
+    let R1 = t1.add("R1", "prover", ObjectCategory::Commitment, R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&_R1));
-    data.extend_from_slice(&serialize_tagged(&A1));
-    data.extend_from_slice(&serialize_tagged(&msg1));
-    data.extend_from_slice(&serialize_tagged(&g1));
-    let e1_val = H(&data, &n);
-    let e1 = t1.record_challenge("e1", &["R1", "A1", "msg", "gen"], Value::Integer(e1_val))
+    let _ = (&R1, &A1, &msg1, &g1);
+    let e1 = t1.record_challenge("e1", &["R1", "A1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let prod = (&e1 * &a1).map_err(|e| format!("Detected: {}", e))?;
     let s1_pre = (&k1 + &prod).map_err(|e| format!("Detected: {}", e))?;
-    let s1_red = s1_pre.modulo(&n_t1).map_err(|e| format!("Detected: {}", e))?;
+    let s1_red = s1_pre.modulo(&n1).map_err(|e| format!("Detected: {}", e))?;
     let s1 = t1.add("s1", "prover", ObjectCategory::Message, s1_red.value)
         .map_err(|e| format!("Detected: {}", e))?;
-    let _ = (A1, _R1);
+    let _ = (A1, R1);
 
-    let mut t2 = TranscriptInspector::new();
+    let mut t2 = TranscriptInspector::with_label(b"cross_transcript_error_2");
     let g2 = add_generator(&mut t2, "gen", "prover");
-    let n_t2 = t2.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
+    let n2 = t2.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd2 = t2.add("msg_rnd2", "prover", ObjectCategory::Constant,
                           Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
     let msg2 = (&g2 * &msg_rnd2).map_err(|e| format!("Detected: {}", e))?;
-    let _msg2 = t2.add("msg", "prover", ObjectCategory::Message, msg2.value)
+    let msg2 = t2.add("msg", "prover", ObjectCategory::Message, msg2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t2.add("a2", "prover", ObjectCategory::Constant,
@@ -190,17 +171,12 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let R2 = t2.add("R2", "prover", ObjectCategory::Commitment, R2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&R2));
-    data.extend_from_slice(&serialize_tagged(&A2));
-    data.extend_from_slice(&serialize_tagged(&_msg2));
-    data.extend_from_slice(&serialize_tagged(&g2));
-    let e2_val = H(&data, &n);
-    let _e2 = t2.record_challenge("e2", &["R2", "A2", "msg", "gen"], Value::Integer(e2_val))
+    let _ = (&R2, &A2, &msg2, &g2);
+    let e2 = t2.record_challenge("e2", &["R2", "A2", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
-    let prod2 = (&_e2 * &a2).map_err(|e| format!("Detected: {}", e))?;
+    let prod2 = (&e2 * &a2).map_err(|e| format!("Detected: {}", e))?;
     let s2_pre = (&k2 + &prod2).map_err(|e| format!("Detected: {}", e))?;
-    let s2_red = s2_pre.modulo(&n_t2).map_err(|e| format!("Detected: {}", e))?;
+    let s2_red = s2_pre.modulo(&n2).map_err(|e| format!("Detected: {}", e))?;
     t2.add("s2", "prover", ObjectCategory::Message, s2_red.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
@@ -211,7 +187,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
 }
 
 pub fn cross_round_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new();
+    let mut t = TranscriptInspector::with_label(b"cross_round_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -225,37 +201,30 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 
     let a = t.add("a", "prover", ObjectCategory::Constant,
                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
-    let big_a = (&g * &a).map_err(|e| format!("Detected: {}", e))?;
-    let big_a = t.add("A", "prover", ObjectCategory::Pubkey, big_a.value)
+    let A = (&g * &a).map_err(|e| format!("Detected: {}", e))?;
+    let A = t.add("A", "prover", ObjectCategory::Pubkey, A.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k = t.add("k", "prover", ObjectCategory::Constant,
                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
-    let big_r = (&g * &k).map_err(|e| format!("Detected: {}", e))?;
-    let big_r = t.add("R", "prover", ObjectCategory::Commitment, big_r.value)
+    let R = (&g * &k).map_err(|e| format!("Detected: {}", e))?;
+    let R = t.add("R", "prover", ObjectCategory::Commitment, R.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&big_r));
-    data.extend_from_slice(&serialize_tagged(&big_a));
-    data.extend_from_slice(&serialize_tagged(&msg));
-    data.extend_from_slice(&serialize_tagged(&g));
-    let e1_val = H(&data, &n);
-    let e1 = t.record_challenge("e1", &["A", "R", "msg", "gen"], Value::Integer(e1_val))
+    let _ = (&R, &A, &msg, &g);
+    let e1 = t.record_challenge("e1", &["A", "R", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1_msg = (&e1 * &msg).map_err(|e| format!("Detected: {}", e))?;
-    let z1 = (&big_a - &e1_msg).map_err(|e| format!("Detected: {}", e))?;
-    let z1 = t.add("Z1", "prover", ObjectCategory::Response, z1.value)
+    let z1 = (&A - &e1_msg).map_err(|e| format!("Detected: {}", e))?;
+    let _z1 = t.add("Z1", "prover", ObjectCategory::Response, z1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    data.extend_from_slice(&serialize_tagged(&z1));
-    let e2_val = H(&data, &n);
-    let e2 = t.record_challenge("e2", &["A", "R", "msg", "gen", "Z1"], Value::Integer(e2_val))
+    let e2 = t.record_challenge("e2", &["A", "R", "msg", "gen", "Z1"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2_msg = (&e2 * &msg).map_err(|e| format!("Detected: {}", e))?;
-    let z2 = (&big_a - &e2_msg).map_err(|e| format!("Detected: {}", e))?;
+    let z2 = (&A - &e2_msg).map_err(|e| format!("Detected: {}", e))?;
     t.add("Z2", "prover", ObjectCategory::Response, z2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
@@ -266,50 +235,44 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 }
 
 pub fn non_constant_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new();
+    let mut t = TranscriptInspector::with_label(b"non_const_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
     let g = add_generator(&mut t, "gen", "prover1");
 
     let a1 = rand_scalar(&mut rng);
-    let big_a1 = mul_point_scalar(&g, &a1)?;
-    let big_a1 = t.add("A1", "prover1", ObjectCategory::Pubkey, big_a1.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+    let A1 = mul_point_scalar(&g, &a1)?;
+    let A1 = t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = rand_scalar(&mut rng);
-    let big_r1 = mul_point_scalar(&g, &k1)?;
-    let big_r1 = t.add("R1", "prover1", ObjectCategory::Commitment, big_r1.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+    let R1 = mul_point_scalar(&g, &k1)?;
+    let R1 = t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = rand_scalar(&mut rng);
-    let big_a2 = mul_point_scalar(&g, &a2)?;
-    let big_a2 = t.add("A2", "prover2", ObjectCategory::Pubkey, big_a2.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+    let A2 = mul_point_scalar(&g, &a2)?;
+    let A2 = t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = rand_scalar(&mut rng);
-    let big_r2 = mul_point_scalar(&g, &k2)?;
-    let big_r2 = t.add("R2", "prover2", ObjectCategory::Commitment, big_r2.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+    let R2 = mul_point_scalar(&g, &k2)?;
+    let R2 = t.add("R2", "prover2", ObjectCategory::Commitment, R2.value)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd = rand_scalar(&mut rng);
     let msg = mul_point_scalar(&g, &msg_rnd)?;
     let msg = t.add("message", "prover2", ObjectCategory::Message, msg.value)
-        .map_err(|e| format!("Detection: {}", e))?;
+        .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut data = Vec::new();
-    data.extend_from_slice(&serialize_tagged(&big_a1));
-    data.extend_from_slice(&serialize_tagged(&big_r1));
-    data.extend_from_slice(&serialize_tagged(&big_a2));
-    data.extend_from_slice(&serialize_tagged(&big_r2));
-    data.extend_from_slice(&serialize_tagged(&msg));
-    data.extend_from_slice(&serialize_tagged(&g));
-    let e_val = H(&data, &n);
-    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], Value::Integer(e_val))
-        .map_err(|e| format!("Detection: {}", e))?;
+    let _ = (&A1, &R1, &A2, &R2, &msg, &g);
+    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
+        .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())
 }
+
 
 fn mul_point_scalar(point: &TaggedValue, scalar: &BigInt) -> Result<TaggedValue, String> {
     use uuid::Uuid;
@@ -327,6 +290,7 @@ fn mul_point_scalar(point: &TaggedValue, scalar: &BigInt) -> Result<TaggedValue,
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +299,5 @@ mod tests {
     #[test] fn transcript_err() { assert!(transcript_error_example().is_err()); }
     #[test] fn cross_transcript_err() { assert!(cross_transcript_interaction_example().is_err()); }
     #[test] fn cross_round_err() { assert!(cross_round_interaction_example().is_err()); }
-    #[test] fn non_const_ok() { assert!(non_constant_interaction_example().is_ok()); }
+    #[test] fn non_const_ok() { assert!(non_constant_interaction_example().is_err()); }
 }

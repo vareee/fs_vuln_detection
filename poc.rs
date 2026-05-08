@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use sha2::{Sha256, Digest};
+use sha3::{Sha3_256, Digest};
 use uuid::Uuid;
 use num_bigint::BigInt;
 use num_traits::{Zero, One, Signed};
@@ -23,7 +23,8 @@ pub enum TranscriptError {
     UnsafeCrossRoundInteraction(String, String),
 }
 
-impl fmt::Display for TranscriptError {fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for TranscriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TranscriptError::ElementAddedAfterChallenge(name, category) => write!(
                 f,
@@ -39,7 +40,7 @@ impl fmt::Display for TranscriptError {fn fmt(&self, f: &mut fmt::Formatter<'_>)
             TranscriptError::DuplicateElementsInChallenge => write!(f, "Challenge has duplicate objects to hash!"),
             TranscriptError::TypeError(msg) => write!(f, "{}", msg),
             TranscriptError::DifferentTranscripts => write!(f, "Objects from different transcripts cannot interact!"),
-            TranscriptError::UnsafeCrossRoundInteraction(o1, o2) => write!(f, "Objects '{}' and '{}' from different rounds interact ...", o1, o2),
+            TranscriptError::UnsafeCrossRoundInteraction(o1, o2) => write!(f, "Objects '{}' and '{}' from different rounds interact!", o1, o2),
         }
     }
 }
@@ -58,7 +59,8 @@ pub enum ObjectCategory {
     Constant,
 }
 
-impl fmt::Display for ObjectCategory {fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for ObjectCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             ObjectCategory::Commitment => "commitment",
             ObjectCategory::Pubkey => "pubkey",
@@ -80,7 +82,8 @@ pub enum Value {
     List(Vec<Value>),
 }
 
-impl PartialEq for Value {fn eq(&self, other: &Self) -> bool {
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Integer(a), Value::Integer(b)) => a == b,
             (Value::Point(a), Value::Point(b)) => a == b,
@@ -97,15 +100,11 @@ impl Value {
 
 
 pub fn secp256k1_order() -> BigInt {
-    BigInt::parse_bytes(
-        b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16
-    ).unwrap()
+    BigInt::parse_bytes(b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16).unwrap()
 }
 
 pub fn secp256k1_field() -> BigInt {
-    BigInt::parse_bytes(
-        b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16
-    ).unwrap()
+    BigInt::parse_bytes(b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16).unwrap()
 }
 
 pub fn bigint_to_scalar(n: &BigInt) -> Scalar {
@@ -117,10 +116,10 @@ pub fn bigint_to_scalar(n: &BigInt) -> Scalar {
         padded.extend_from_slice(&bytes);
         bytes = padded;
     }
-    let arr: [u8; 32] = bytes.try_into().expect("scalar must be 32 bytes after reduction");
+    let arr: [u8; 32] = bytes.try_into().expect("Scalar must be 32 bytes after reduction!");
     let fb = k256::FieldBytes::from(arr);
     Option::<Scalar>::from(Scalar::from_repr(fb))
-        .expect("valid scalar bytes after reduction")
+        .expect("Valid scalar bytes after reduction")
 }
 
 pub fn point_xy_bytes(p: &ProjectivePoint) -> Option<([u8; 32], [u8; 32])> {
@@ -173,7 +172,12 @@ pub struct TaggedValue {
 }
 
 impl TaggedValue {
-    pub fn new(value: Value, transcript_id: Uuid) -> Self { Self { value, transcript_id } }
+    pub fn new(value: Value, transcript_id: Uuid) -> Self { 
+        Self { 
+            value, 
+            transcript_id 
+        } 
+    }
 
     fn ensure_same_transcript_id(&self, other: &TaggedValue) -> Result<(), TranscriptError> {
         if self.transcript_id != other.transcript_id {
@@ -182,15 +186,21 @@ impl TaggedValue {
     }
 
     pub fn as_bigint(&self) -> Option<&BigInt> {
-        if let Value::Integer(b) = &self.value { Some(b) } else { None }
+        if let Value::Integer(b) = &self.value { 
+            Some(b) 
+        } else { None }
     }
 
     pub fn as_point(&self) -> Option<&ProjectivePoint> {
-        if let Value::Point(p) = &self.value { Some(p) } else { None }
+        if let Value::Point(p) = &self.value { 
+            Some(p) 
+        } else { None }
     }
 
     pub fn as_list(&self) -> Option<&Vec<Value>> {
-        if let Value::List(v) = &self.value { Some(v) } else { None }
+        if let Value::List(v) = &self.value { 
+            Some(v) 
+        } else { None }
     }
 
     pub fn index(&self, i: usize) -> TaggedValue {
@@ -206,7 +216,7 @@ impl TaggedValue {
             (Value::Integer(a), Value::Integer(m)) => {
                 Ok(TaggedValue::new(Value::Integer(a.mod_floor(m)), self.transcript_id))
             }
-            _ => Err(TranscriptError::TypeError("Modulo only on Integer".into())),
+            _ => Err(TranscriptError::TypeError("Modulo only on Integer".to_string())),
         }
     }
 
@@ -215,14 +225,14 @@ impl TaggedValue {
             Value::Integer(b) => {
                 let val = if exp.is_negative() {
                     let inv = mod_inverse(b, modulus).ok_or_else(||
-                        TranscriptError::TypeError("No modular inverse!".into()))?;
+                        TranscriptError::TypeError("No modular inverse!".to_string()))?;
                     inv.modpow(&(-exp), modulus)
                 } else {
                     b.modpow(exp, modulus)
                 };
                 Ok(TaggedValue::new(Value::Integer(val), self.transcript_id))
             }
-            _ => Err(TranscriptError::TypeError("Pow only on Integer!".into())),
+            _ => Err(TranscriptError::TypeError("Pow only on Integer!".to_string())),
         }
     }
 }
@@ -248,7 +258,7 @@ impl<'a, 'b> std::ops::Add<&'b TaggedValue> for &'a TaggedValue {
         let v = match (&self.value, &other.value) {
             (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
             (Value::Point(a), Value::Point(b)) => Value::Point(*a + *b),
-            _ => return Err(TranscriptError::TypeError("Unsupported types for addition!".into())),
+            _ => return Err(TranscriptError::TypeError("Unsupported types for addition!".to_string())),
         };
         Ok(TaggedValue::new(v, self.transcript_id))
     }
@@ -279,17 +289,18 @@ impl<'a, 'b> std::ops::Mul<&'b TaggedValue> for &'a TaggedValue {
             (Value::Point(p), Value::Integer(a)) => {
                 Value::Point(*p * bigint_to_scalar(a))
             }
-            _ => return Err(TranscriptError::TypeError("Unsupported types for multiplication!".into())),
+            _ => return Err(TranscriptError::TypeError("Unsupported types for multiplication!".to_string())),
         };
         Ok(TaggedValue::new(v, self.transcript_id))
     }
 }
 
+
 #[derive(Debug, Clone)]
 struct TranscriptElement {
-    subject: String,
+    #[allow(dead_code)] subject: String,
     category: ObjectCategory,
-    index: usize,
+    #[allow(dead_code)] index: usize,
     round: usize,
     tagged_value: TaggedValue,
 }
@@ -302,27 +313,67 @@ pub struct TranscriptInspector {
     round: usize,
     challenges_mul: HashMap<String, HashSet<String>>,
     constant_num: usize,
+    transcript: Vec<u8>,
+}
+
+
+fn serialize_value_into(buf: &mut Vec<u8>, v: &Value) {
+    match v {
+        Value::Integer(b) => {
+            buf.push(0x01);
+            buf.extend_from_slice(&bigint_to_be32(b));
+        }
+        Value::Point(p) => {
+            buf.push(0x02);
+            match point_xy_bytes(p) {
+                Some((x, y)) => {
+                    buf.extend_from_slice(&x);
+                    buf.extend_from_slice(&y);
+                }
+                None => buf.extend_from_slice(&[0u8; 64]),
+            }
+        }
+        Value::List(items) => {
+            buf.push(0x03);
+            buf.extend_from_slice(&(items.len() as u32).to_be_bytes());
+            for it in items {
+                serialize_value_into(buf, it);
+            }
+        }
+    }
 }
 
 impl TranscriptInspector {
-    pub fn new() -> Self {
+    pub fn new() -> Self { 
+        Self::with_label(b"") 
+    }
+
+    pub fn with_label(protocol_label: &[u8]) -> Self {
+        let mut transcript = Vec::new();
+        transcript.extend_from_slice(&(protocol_label.len() as u32).to_be_bytes());
+        transcript.extend_from_slice(protocol_label);
         Self {
             transcript_id: Uuid::new_v4(),
             elements: HashMap::new(),
             challenges: HashMap::new(),
-            index: 0, 
+            index: 0,
             round: 0,
             challenges_mul: HashMap::new(),
             constant_num: 0,
+            transcript,
         }
     }
 
-    pub fn get_transcript_id(&self) -> Uuid {
-        self.transcript_id
+    pub fn get_transcript_id(&self) -> Uuid { 
+        self.transcript_id 
     }
 
-    fn tag(&self, value: Value) -> TaggedValue {
-        TaggedValue::new(value, self.transcript_id)
+    fn tag(&self, value: Value) -> TaggedValue { 
+        TaggedValue::new(value, self.transcript_id) 
+    }
+
+    pub fn transcript_bytes(&self) -> &[u8] { 
+        &self.transcript 
     }
 
     pub fn add(&mut self, name: &str, subject: &str, category: ObjectCategory, value: Value) -> Result<TaggedValue, TranscriptError> {
@@ -335,6 +386,13 @@ impl TranscriptInspector {
             return Err(TranscriptError::ElementAddedAfterChallenge(
                 name.to_string(), category.to_string()));
         }
+
+        let name_bytes = name.as_bytes();
+        self.transcript.extend_from_slice(&(name_bytes.len() as u32).to_be_bytes());
+        self.transcript.extend_from_slice(name_bytes);
+        self.transcript.push(category as u8 + 0x10);
+        serialize_value_into(&mut self.transcript, &value);
+
         let tagged = self.tag(value);
         self.elements.insert(name.to_string(), TranscriptElement {
             subject: subject.to_string(),
@@ -347,13 +405,28 @@ impl TranscriptInspector {
         Ok(tagged)
     }
 
-    pub fn record_challenge(&mut self, challenge_name: &str, used_names: &[&str], value: Value) -> Result<TaggedValue, TranscriptError> {
+    pub fn record_challenge(&mut self, challenge_name: &str, used_names: &[&str], curve_order: &BigInt) -> Result<TaggedValue, TranscriptError> {
         let used_set: HashSet<String> = used_names.iter().map(|s| s.to_string()).collect();
         if used_set.len() != used_names.len() {
             return Err(TranscriptError::DuplicateElementsInChallenge);
         }
-        let expected = self.elements.len() - self.challenges.len() - self.constant_num;
-        if used_names.len() < expected {
+        let expected_count = self.elements.values().filter(|e| matches!(
+            e.category,
+            ObjectCategory::Commitment
+                | ObjectCategory::Pubkey
+                | ObjectCategory::Message
+                | ObjectCategory::Response,
+        )).count();
+        let referenced_msgs_count = used_set.iter().filter(|n| {
+            self.elements.get(*n).is_some_and(|e| matches!(
+                e.category,
+                ObjectCategory::Commitment
+                    | ObjectCategory::Pubkey
+                    | ObjectCategory::Message
+                    | ObjectCategory::Response,
+            ))
+        }).count();
+        if referenced_msgs_count < expected_count {
             return Err(TranscriptError::NotEveryProverMessagesIncluded);
         }
         let mut pt_found = false;
@@ -372,13 +445,24 @@ impl TranscriptInspector {
             if !pt_found { return Err(TranscriptError::PlaintextNotInFirstChallenge); }
             if !gen_found { return Err(TranscriptError::GeneratorNotInFirstChallenge); }
         }
-        let tagged = self.add(challenge_name, "verifier", ObjectCategory::Challenge, value)?;
+        let mut hasher = Sha3_256::new();
+        hasher.update(&self.transcript);
+        hasher.update(challenge_name.as_bytes());
+        let digest = hasher.finalize();
+        let val = BigInt::from_bytes_be(num_bigint::Sign::Plus, &digest)
+            .mod_floor(curve_order);
+        let tagged = self.add(
+            challenge_name, "verifier",
+            ObjectCategory::Challenge, Value::Integer(val),
+        )?;
         self.challenges.insert(challenge_name.to_string(), used_set);
         self.round += 1;
         Ok(tagged)
     }
 
-    pub fn check_cross_round_interaction(&self, object1: &str, object2: &str) -> Result<(), TranscriptError> {
+    pub fn check_cross_round_interaction(
+        &self, object1: &str, object2: &str,
+    ) -> Result<(), TranscriptError> {
         let info1 = self.elements.get(object1).ok_or_else(||
             TranscriptError::UnsafeCrossRoundInteraction(object1.into(), object2.into()))?;
         let info2 = self.elements.get(object2).ok_or_else(||
@@ -402,14 +486,15 @@ impl TranscriptInspector {
 
 impl Default for TranscriptInspector { fn default() -> Self { Self::new() } }
 
-#[allow(non_snake_case)]
+
 pub fn H(data: &[u8], curve_order: &BigInt) -> BigInt {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha3_256::new();
     hasher.update(data);
     let digest = hasher.finalize();
     let val = BigInt::from_bytes_be(num_bigint::Sign::Plus, &digest);
     val.mod_floor(curve_order)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -424,16 +509,16 @@ mod tests {
     }
 
     #[test]
-    fn test_scalar_mul_point() {
+    fn test_scalar_mul_real_curve() {
         let g = ProjectivePoint::GENERATOR;
         let s = bigint_to_scalar(&BigInt::from(2));
-        let double = g * s;
-        let double_prime = g + g;
-        assert_eq!(double, double_prime);
+        let two_g = g * s;
+        let g_plus_g = g + g;
+        assert_eq!(two_g, g_plus_g);
     }
 
     #[test]
-    fn test_tagged_ops() {
+    fn test_tagged_arithmetic_points() {
         let insp = TranscriptInspector::new();
         let id = insp.get_transcript_id();
         let g = TaggedValue::new(Value::Point(ProjectivePoint::GENERATOR), id);

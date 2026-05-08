@@ -40,6 +40,6 @@ fn main() {
     let params = setup(2, 4);
     match forge_bulletproof(&params) {
         Ok(_proof) => println!("No Fiat-Shamir heuristic vulnerability detected."),
-        Err(e) => println!("{}", e),
+        Err(e) => println!("Detected: {}", e),
     }
 }

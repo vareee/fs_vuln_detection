@@ -23,5 +23,3 @@ num-integer = "0.1"
 k256 = { version = "0.13", features = ["arithmetic"] }
 elliptic-curve = { version = "0.13", features = ["arithmetic"] }
 hex = "0.4"
-
-[dev-dependencies]

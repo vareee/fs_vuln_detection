@@ -1,3 +1,5 @@
+// examples of Shnorr implementing weak Fiat-Shamir
+
 use rand::Rng;
 use num_bigint::{BigInt, RandBigInt};
 use num_traits::One;
@@ -8,17 +10,20 @@ use crate::poc::{
 };
 
 
+// get random scalar
 fn rand_scalar(rng: &mut impl Rng) -> BigInt {
     let n = secp256k1_order();
     rng.gen_bigint_range(&BigInt::one(), &n)
 }
 
+// add generator element to a provided transcript
 fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> TaggedValue {
     t.add(name, subject, ObjectCategory::Generator,
           Value::Point(ProjectivePoint::GENERATOR))
         .expect("generator add")
 }
 
+// example of safe transcript
 pub fn safe_transcript_example() -> Result<String, String> {
     let mut t = TranscriptInspector::with_label(b"safe_transcript");
     let mut rng = rand::thread_rng();
@@ -63,6 +68,7 @@ pub fn safe_transcript_example() -> Result<String, String> {
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())
 }
 
+// example of transcript with TranscriptError
 pub fn transcript_error_example() -> Result<String, String> {
     let mut t = TranscriptInspector::with_label(b"transcript_with_order_error");
     let mut rng = rand::thread_rng();
@@ -101,6 +107,7 @@ pub fn transcript_error_example() -> Result<String, String> {
     }
 }
 
+// example of cross transcript interaction with error
 pub fn cross_transcript_interaction_example() -> Result<String, String> {
     fn bad_verify(
         R: &TaggedValue, A: &TaggedValue, s: &TaggedValue, e: &TaggedValue, G: &TaggedValue,
@@ -186,6 +193,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     }
 }
 
+// example of cross round object ineraction with error
 pub fn cross_round_interaction_example() -> Result<String, String> {
     let mut t = TranscriptInspector::with_label(b"cross_round_transcript");
     let mut rng = rand::thread_rng();
@@ -234,6 +242,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     }
 }
 
+// example of interaction with not constants
 pub fn non_constant_interaction_example() -> Result<String, String> {
     let mut t = TranscriptInspector::with_label(b"non_const_transcript");
     let mut rng = rand::thread_rng();

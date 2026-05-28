@@ -1,3 +1,5 @@
+// example of bulletproofs implementing weak Fiat-Shamir heuristics
+
 use std::collections::HashMap;
 use rand::Rng;
 use num_bigint::{BigInt, RandBigInt};

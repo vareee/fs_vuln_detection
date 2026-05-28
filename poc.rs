@@ -376,6 +376,7 @@ impl TranscriptInspector {
         &self.transcript 
     }
 
+    // add object to transcript (who did it, its category (pubkey, challenge, ...), its number in transcript and round number)
     pub fn add(&mut self, name: &str, subject: &str, category: ObjectCategory, value: Value) -> Result<TaggedValue, TranscriptError> {
         if let Some(e) = self.elements.get(name) {
             return Ok(e.tagged_value.clone());
@@ -405,6 +406,7 @@ impl TranscriptInspector {
         Ok(tagged)
     }
 
+    // create a challenge
     pub fn record_challenge(&mut self, challenge_name: &str, used_names: &[&str], curve_order: &BigInt) -> Result<TaggedValue, TranscriptError> {
         let used_set: HashSet<String> = used_names.iter().map(|s| s.to_string()).collect();
         if used_set.len() != used_names.len() {
@@ -437,13 +439,13 @@ impl TranscriptInspector {
                     if info.category == ObjectCategory::Message { pt_found = true; }
                     else if info.category == ObjectCategory::Generator { gen_found = true; }
                 }
-                None => return Err(TranscriptError::UnknownElementInChallenge(
+                None => return Err(TranscriptError::UnknownElementInChallenge( // error if an argument was not declared in transcript
                     challenge_name.to_string(), n.clone())),
             }
         }
         if self.challenges.is_empty() {
-            if !pt_found { return Err(TranscriptError::PlaintextNotInFirstChallenge); }
-            if !gen_found { return Err(TranscriptError::GeneratorNotInFirstChallenge); }
+            if !pt_found { return Err(TranscriptError::PlaintextNotInFirstChallenge); } // error if plaintext was not hashed in the first challenge
+            if !gen_found { return Err(TranscriptError::GeneratorNotInFirstChallenge); } // error if generator (of a group or an ellicptic curve) was not hashed in the first challenge
         }
         let mut hasher = Sha3_256::new();
         hasher.update(&self.transcript);
@@ -460,6 +462,7 @@ impl TranscriptInspector {
         Ok(tagged)
     }
 
+    // detect errors in cross-round interaction
     pub fn check_cross_round_interaction(
         &self, object1: &str, object2: &str,
     ) -> Result<(), TranscriptError> {
@@ -468,16 +471,16 @@ impl TranscriptInspector {
         let info2 = self.elements.get(object2).ok_or_else(||
             TranscriptError::UnsafeCrossRoundInteraction(object1.into(), object2.into()))?;
         if info1.round == info2.round { return Ok(()); }
-        let mul_1 = self.challenges_mul.get(object1).cloned().unwrap_or_default();
-        let mul_2 = self.challenges_mul.get(object2).cloned().unwrap_or_default();
+        let mul_1 = self.challenges_mul.get(object1).cloned().unwrap_or_default(); // list of challenges object1 was multiplied by
+        let mul_2 = self.challenges_mul.get(object2).cloned().unwrap_or_default(); // list of challenges object2 was multiplied by
         let other_round_challenges_1: HashSet<String> = self.challenges.iter()
             .filter(|(name, _)| self.elements.get(*name).map_or(false, |e| e.round == info2.round))
-            .map(|(n, _)| n.clone()).collect();
+            .map(|(n, _)| n.clone()).collect(); // list of challenges in round of object2
         let other_round_challenges_2: HashSet<String> = self.challenges.iter()
             .filter(|(name, _)| self.elements.get(*name).map_or(false, |e| e.round == info1.round))
-            .map(|(n, _)| n.clone()).collect();
-        let safe_1 = !mul_1.is_disjoint(&other_round_challenges_1);
-        let safe_2 = !mul_2.is_disjoint(&other_round_challenges_2);
+            .map(|(n, _)| n.clone()).collect(); // list of challenges in round of object1
+        let safe_1 = !mul_1.is_disjoint(&other_round_challenges_1); // check if object1 was multiplied by any challenge in round of object2
+        let safe_2 = !mul_2.is_disjoint(&other_round_challenges_2); // check if object2 was multiplied by any challenge in round of object1
         if !(safe_1 || safe_2) {
             Err(TranscriptError::UnsafeCrossRoundInteraction(object1.into(), object2.into()))
         } else { Ok(()) }

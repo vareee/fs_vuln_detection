@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use sha3::{Sha3_256, Digest};
+use sha3::Digest;
 use uuid::Uuid;
 use num_bigint::BigInt;
 use num_traits::{Zero, One, Signed};
@@ -407,7 +407,7 @@ impl TranscriptInspector {
     }
 
     // create a challenge
-    pub fn record_challenge(&mut self, challenge_name: &str, used_names: &[&str], curve_order: &BigInt) -> Result<TaggedValue, TranscriptError> {
+    pub fn record_challenge<H: FSHash>(&mut self, challenge_name: &str, used_names: &[&str], curve_order: &BigInt) -> Result<TaggedValue, TranscriptError> {
         let used_set: HashSet<String> = used_names.iter().map(|s| s.to_string()).collect();
         if used_set.len() != used_names.len() {
             return Err(TranscriptError::DuplicateElementsInChallenge);
@@ -447,10 +447,10 @@ impl TranscriptInspector {
             if !pt_found { return Err(TranscriptError::PlaintextNotInFirstChallenge); } // error if plaintext was not hashed in the first challenge
             if !gen_found { return Err(TranscriptError::GeneratorNotInFirstChallenge); } // error if generator (of a group or an ellicptic curve) was not hashed in the first challenge
         }
-        let mut hasher = Sha3_256::new();
-        hasher.update(&self.transcript);
-        hasher.update(challenge_name.as_bytes());
-        let digest = hasher.finalize();
+        let mut buf = Vec::with_capacity(self.transcript.len() + challenge_name.len());
+        buf.extend_from_slice(&self.transcript);
+        buf.extend_from_slice(challenge_name.as_bytes());
+        let digest = H::hash(&buf);
         let val = BigInt::from_bytes_be(num_bigint::Sign::Plus, &digest)
             .mod_floor(curve_order);
         let tagged = self.add(
@@ -489,13 +489,17 @@ impl TranscriptInspector {
 
 impl Default for TranscriptInspector { fn default() -> Self { Self::new() } }
 
+// allow using arbitrary hash-function compatible to Digest
+pub trait FSHash {
+    fn hash(input: &[u8]) -> Vec<u8>;
+}
 
-pub fn H(data: &[u8], curve_order: &BigInt) -> BigInt {
-    let mut hasher = Sha3_256::new();
-    hasher.update(data);
-    let digest = hasher.finalize();
-    let val = BigInt::from_bytes_be(num_bigint::Sign::Plus, &digest);
-    val.mod_floor(curve_order)
+impl<D: Digest> FSHash for D {
+    fn hash(input: &[u8]) -> Vec<u8> {
+        let mut h = <D as Digest>::new();
+        h.update(input);
+        h.finalize().to_vec()
+    }
 }
 
 

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use rand::Rng;
+use sha3::Sha3_256;
 use num_bigint::{BigInt, RandBigInt};
 use num_traits::{One, Zero};
 use num_integer::Integer;
@@ -144,8 +145,8 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
     t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
 
-    let y_tag = t.record_challenge("y", &["A", "S"], &q).map_err(|e| e.to_string())?;
-    let z_tag = t.record_challenge("z", &["A", "S"], &q).map_err(|e| e.to_string())?;
+    let y_tag = t.record_challenge::<Sha3_256>("y", &["A", "S"], &q).map_err(|e| e.to_string())?;
+    let z_tag = t.record_challenge::<Sha3_256>("z", &["A", "S"], &q).map_err(|e| e.to_string())?;
     let y_val = y_tag.as_bigint().cloned().ok_or("y must be Integer")?;
     let z_val = z_tag.as_bigint().cloned().ok_or("z must be Integer")?;
 
@@ -163,7 +164,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("T1", "prover", ObjectCategory::Commitment, Value::Integer(big_t1.clone())).map_err(|e| e.to_string())?;
     t.add("T2", "prover", ObjectCategory::Commitment, Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
 
-    let x_tag = t.record_challenge("x", &["A", "S", "T1", "T2"], &q).map_err(|e| e.to_string())?;
+    let x_tag = t.record_challenge::<Sha3_256>("x", &["A", "S", "T1", "T2"], &q).map_err(|e| e.to_string())?;
     let x_val = x_tag.as_bigint().cloned().ok_or("x must be Integer")?;
 
     let l: Vec<BigInt> = (0..n as usize).map(|i| {
@@ -192,7 +193,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("mu", "prover", ObjectCategory::Constant, Value::Integer(mu.clone())).map_err(|e| e.to_string())?;
     t.add("tau_x", "prover", ObjectCategory::Constant, Value::Integer(tau_x.clone())).map_err(|e| e.to_string())?;
 
-    let w_tag = t.record_challenge("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], &q)
+    let w_tag = t.record_challenge::<Sha3_256>("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], &q)
         .map_err(|e| e.to_string())?;
     let w_val = w_tag.as_bigint().cloned().ok_or("w must be Integer")?;
 

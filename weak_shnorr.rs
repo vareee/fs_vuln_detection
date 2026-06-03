@@ -1,6 +1,7 @@
 // examples of Shnorr implementing weak Fiat-Shamir
 
 use rand::Rng;
+use sha3::Sha3_256;
 use num_bigint::{BigInt, RandBigInt};
 use num_traits::One;
 use k256::ProjectivePoint;
@@ -8,6 +9,7 @@ use crate::poc::{
     secp256k1_order, ObjectCategory, TaggedValue,
     TranscriptInspector, Value,
 };
+
 
 
 // get random scalar
@@ -62,7 +64,7 @@ pub fn safe_transcript_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&A1, &R1, &A2, &R2, &msg, &g);
-    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
+    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())
@@ -95,7 +97,7 @@ pub fn transcript_error_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&A1, &R1, &msg, &g);
-    t.record_challenge("e1", &["A1", "R1", "msg", "gen"], &n)
+    t.record_challenge::<Sha3_256>("e1", &["A1", "R1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t.add("a2", "prover2", ObjectCategory::Constant,
@@ -145,7 +147,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&R1, &A1, &msg1, &g1);
-    let e1 = t1.record_challenge("e1", &["R1", "A1", "msg", "gen"], &n)
+    let e1 = t1.record_challenge::<Sha3_256>("e1", &["R1", "A1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let prod = (&e1 * &a1).map_err(|e| format!("Detected: {}", e))?;
@@ -179,7 +181,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&R2, &A2, &msg2, &g2);
-    let e2 = t2.record_challenge("e2", &["R2", "A2", "msg", "gen"], &n)
+    let e2 = t2.record_challenge::<Sha3_256>("e2", &["R2", "A2", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
     let prod2 = (&e2 * &a2).map_err(|e| format!("Detected: {}", e))?;
     let s2_pre = (&k2 + &prod2).map_err(|e| format!("Detected: {}", e))?;
@@ -220,7 +222,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&R, &A, &msg, &g);
-    let e1 = t.record_challenge("e1", &["A", "R", "msg", "gen"], &n)
+    let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1_msg = (&e1 * &msg).map_err(|e| format!("Detected: {}", e))?;
@@ -228,7 +230,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     let _z1 = t.add("Z1", "prover", ObjectCategory::Response, z1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e2 = t.record_challenge("e2", &["A", "R", "msg", "gen", "Z1"], &n)
+    let e2 = t.record_challenge::<Sha3_256>("e2", &["A", "R", "msg", "gen", "Z1"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2_msg = (&e2 * &msg).map_err(|e| format!("Detected: {}", e))?;
@@ -276,7 +278,7 @@ pub fn non_constant_interaction_example() -> Result<String, String> {
         .map_err(|e| format!("Detected: {}", e))?;
 
     let _ = (&A1, &R1, &A2, &R2, &msg, &g);
-    t.record_challenge("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
+    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())

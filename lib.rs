@@ -4,8 +4,8 @@ pub mod weak_shnorr;
 
 pub use poc::{
     bigint_to_scalar, point_xy_bytes, secp256k1_field, secp256k1_order,
-    ObjectCategory, TaggedValue,
-    TranscriptError, TranscriptInspector, Value, H,
+    FSHash, ObjectCategory, TaggedValue,
+    TranscriptError, TranscriptInspector, Value,
 };
 
 pub use weak_bulletproofs::{forge_bulletproof, setup};

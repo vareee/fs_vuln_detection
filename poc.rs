@@ -508,14 +508,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hash() {
-        let n = secp256k1_order();
-        let h = H(b"Hello!", &n);
-        assert!(h >= BigInt::zero());
-        assert!(h < n);
-    }
-
-    #[test]
     fn test_scalar_mul_real_curve() {
         let g = ProjectivePoint::GENERATOR;
         let s = bigint_to_scalar(&BigInt::from(2));

@@ -6,7 +6,7 @@ use num_bigint::{BigInt, RandBigInt};
 use num_traits::One;
 use k256::ProjectivePoint;
 use crate::poc::{
-    secp256k1_order, ObjectCategory, TaggedValue,
+    secp256k1_order, TaggedValue,
     TranscriptInspector, Value,
 };
 
@@ -20,8 +20,7 @@ fn rand_scalar(rng: &mut impl Rng) -> BigInt {
 
 // add generator element to a provided transcript
 fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> TaggedValue {
-    t.add(name, subject, ObjectCategory::Generator,
-          Value::Point(ProjectivePoint::GENERATOR))
+    t.add_generator_for(name, subject, Value::Point(ProjectivePoint::GENERATOR))
         .expect("generator add")
 }
 
@@ -33,34 +32,34 @@ pub fn safe_transcript_example() -> Result<String, String> {
 
     let g = add_generator(&mut t, "gen", "prover1");
 
-    let a1 = t.add("a1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a1 = t.add_constant_for("a1", "prover1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
-    t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
+    t.add_public_key_for("A1", "prover1", A1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k1 = t.add("k1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k1 = t.add_constant_for("k1", "prover1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
-    t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
+    t.add_commitment_for("R1", "prover1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a2 = t.add("a2", "prover2", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a2 = t.add_constant_for("a2", "prover2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
-    t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value)
+    t.add_public_key_for("A2", "prover2", A2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k2 = t.add("k2", "prover2", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k2 = t.add_constant_for("k2", "prover2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R2 = (&g * k2).map_err(|e| format!("Detected: {}", e))?;
-    t.add("R2", "prover2", ObjectCategory::Commitment, R2.value)
+    t.add_commitment_for("R2", "prover2", R2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let msg_rnd = t.add("msg_rnd", "prover2", ObjectCategory::Constant,
-                        Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg_rnd = t.add_constant_for("msg_rnd", "prover2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    t.add("message", "prover2", ObjectCategory::Message, msg.value)
+    t.add_message_for("message", "prover2", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
@@ -77,31 +76,31 @@ pub fn transcript_error_example() -> Result<String, String> {
 
     let g = add_generator(&mut t, "gen", "prover1");
 
-    let msg_rnd = t.add("msg_rnd", "prover1", ObjectCategory::Constant,
-                        Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg_rnd = t.add_constant_for("msg_rnd", "prover1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    t.add("msg", "prover1", ObjectCategory::Message, msg.value)
+    t.add_message_for("msg", "prover1", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a1 = t.add("a1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a1 = t.add_constant_for("a1", "prover1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
-    t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
+    t.add_public_key_for("A1", "prover1", A1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k1 = t.add("k1", "prover1", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k1 = t.add_constant_for("k1", "prover1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
-    t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
+    t.add_commitment_for("R1", "prover1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e1", &["A1", "R1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a2 = t.add("a2", "prover2", ObjectCategory::Constant,
-                   Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a2 = t.add_constant_for("a2", "prover2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
-    match t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value) {
+    match t.add_public_key_for("A2", "prover2", A2.value) {
         Ok(_)  => Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string()),
         Err(e) => Err(format!("Detected: {}", e)),
     }
@@ -123,25 +122,25 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
 
     let mut t1 = TranscriptInspector::with_label(b"cross_transcript_1");
     let g1 = add_generator(&mut t1, "gen", "prover");
-    let n1 = t1.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
+    let n1 = t1.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let msg_rnd1 = t1.add("msg_rnd1", "prover", ObjectCategory::Constant,
-                          Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg_rnd1 = t1.add_constant("msg_rnd1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let msg1 = (&g1 * msg_rnd1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add("msg", "prover", ObjectCategory::Message, msg1.value)
+    t1.add_message("msg", msg1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a1 = t1.add("a1", "prover", ObjectCategory::Constant,
-                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a1 = t1.add_constant("a1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A1 = (&g1 * &a1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add("A1", "prover", ObjectCategory::Pubkey, A1.value)
+    t1.add_public_key("A1", A1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k1 = t1.add("k1", "prover", ObjectCategory::Constant,
-                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k1 = t1.add_constant("k1", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R1 = (&g1 * &k1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add("R1", "prover", ObjectCategory::Commitment, R1.value)
+    t1.add_commitment("R1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1 = t1.record_challenge::<Sha3_256>("e1", &["R1", "A1", "msg", "gen"], &n)
@@ -150,30 +149,30 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let prod = (&e1 * a1).map_err(|e| format!("Detected: {}", e))?;
     let s1_pre = (k1 + prod).map_err(|e| format!("Detected: {}", e))?;
     let s1_red = s1_pre.modulo(&n1).map_err(|e| format!("Detected: {}", e))?;
-    let s1 = t1.add("s1", "prover", ObjectCategory::Message, s1_red.value)
+    let s1 = t1.add_message("s1", s1_red.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let mut t2 = TranscriptInspector::with_label(b"cross_transcript_error_2");
     let g2 = add_generator(&mut t2, "gen", "prover");
-    let n2 = t2.add("n", "prover", ObjectCategory::Generator, Value::Integer(n.clone()))
+    let n2 = t2.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let msg_rnd2 = t2.add("msg_rnd2", "prover", ObjectCategory::Constant,
-                          Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg_rnd2 = t2.add_constant("msg_rnd2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let msg2 = (&g2 * msg_rnd2).map_err(|e| format!("Detected: {}", e))?;
-    t2.add("msg", "prover", ObjectCategory::Message, msg2.value)
+    t2.add_message("msg", msg2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a2 = t2.add("a2", "prover", ObjectCategory::Constant,
-                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a2 = t2.add_constant("a2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A2 = (&g2 * &a2).map_err(|e| format!("Detected: {}", e))?;
-    let A2 = t2.add("A2", "prover", ObjectCategory::Pubkey, A2.value)
+    let A2 = t2.add_public_key("A2", A2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k2 = t2.add("k2", "prover", ObjectCategory::Constant,
-                    Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k2 = t2.add_constant("k2", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R2 = (&g2 * &k2).map_err(|e| format!("Detected: {}", e))?;
-    let R2 = t2.add("R2", "prover", ObjectCategory::Commitment, R2.value)
+    let R2 = t2.add_commitment("R2", R2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2 = t2.record_challenge::<Sha3_256>("e2", &["R2", "A2", "msg", "gen"], &n)
@@ -181,7 +180,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let prod2 = (&e2 * a2).map_err(|e| format!("Detected: {}", e))?;
     let s2_pre = (k2 + prod2).map_err(|e| format!("Detected: {}", e))?;
     let s2_red = s2_pre.modulo(&n2).map_err(|e| format!("Detected: {}", e))?;
-    t2.add("s2", "prover", ObjectCategory::Message, s2_red.value)
+    t2.add_message("s2", s2_red.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     match bad_verify(&R2, &A2, &s1, &e1, &g2) {
@@ -198,22 +197,22 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 
     let g = add_generator(&mut t, "gen", "prover2");
 
-    let msg_rnd = t.add("msg_rnd", "prover", ObjectCategory::Constant,
-                        Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let msg_rnd = t.add_constant("msg_rnd", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    let msg = t.add("msg", "prover", ObjectCategory::Message, msg.value)
+    let msg = t.add_message("msg", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let a = t.add("a", "prover", ObjectCategory::Constant,
-                  Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let a = t.add_constant("a", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let A = (&g * a).map_err(|e| format!("Detected: {}", e))?;
-    let A = t.add("A", "prover", ObjectCategory::Pubkey, A.value)
+    let A = t.add_public_key("A", A.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let k = t.add("k", "prover", ObjectCategory::Constant,
-                  Value::Integer(rand_scalar(&mut rng))).map_err(|e| format!("Detected: {}", e))?;
+    let k = t.add_constant("k", Value::Integer(rand_scalar(&mut rng)))
+        .map_err(|e| format!("Detected: {}", e))?;
     let R = (&g * k).map_err(|e| format!("Detected: {}", e))?;
-    t.add("R", "prover", ObjectCategory::Commitment, R.value)
+    t.add_commitment("R", R.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"], &n)
@@ -248,27 +247,27 @@ pub fn non_constant_interaction_example() -> Result<String, String> {
 
     let a1 = rand_scalar(&mut rng);
     let A1 = mul_point_scalar(&g, &a1)?;
-    t.add("A1", "prover1", ObjectCategory::Pubkey, A1.value)
+    t.add_public_key_for("A1", "prover1", A1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = rand_scalar(&mut rng);
     let R1 = mul_point_scalar(&g, &k1)?;
-    t.add("R1", "prover1", ObjectCategory::Commitment, R1.value)
+    t.add_commitment_for("R1", "prover1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = rand_scalar(&mut rng);
     let A2 = mul_point_scalar(&g, &a2)?;
-    t.add("A2", "prover2", ObjectCategory::Pubkey, A2.value)
+    t.add_public_key_for("A2", "prover2", A2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = rand_scalar(&mut rng);
     let R2 = mul_point_scalar(&g, &k2)?;
-    t.add("R2", "prover2", ObjectCategory::Commitment, R2.value)
+    t.add_commitment_for("R2", "prover2", R2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd = rand_scalar(&mut rng);
     let msg = mul_point_scalar(&g, &msg_rnd)?;
-    t.add("message", "prover2", ObjectCategory::Message, msg.value)
+    t.add_message_for("message", "prover2", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)

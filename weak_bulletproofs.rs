@@ -7,7 +7,7 @@ use num_bigint::{BigInt, RandBigInt};
 use num_traits::{One, ToPrimitive, Zero};
 use num_integer::Integer;
 use crate::poc::{
-    mod_inverse, ObjectCategory, TranscriptInspector, Value,
+    mod_inverse, TranscriptInspector, Value,
 };
 
 
@@ -112,15 +112,15 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
         Value::List(values.iter().cloned().map(Value::Integer).collect())
     };
 
-    t.add("m", "prover", ObjectCategory::Pubkey, Value::Integer(m_bi)).map_err(|e| e.to_string())?;
-    t.add("n", "prover", ObjectCategory::Pubkey, Value::Integer(n_bi)).map_err(|e| e.to_string())?;
-    t.add("g_vec", "prover", ObjectCategory::Pubkey, to_list(&g_vec)).map_err(|e| e.to_string())?;
-    t.add("h_vec", "prover", ObjectCategory::Pubkey, to_list(&h_vec)).map_err(|e| e.to_string())?;
-    t.add("g", "prover", ObjectCategory::Generator, Value::Integer(g.clone())).map_err(|e| e.to_string())?;
-    t.add("h", "prover", ObjectCategory::Generator, Value::Integer(h.clone())).map_err(|e| e.to_string())?;
-    t.add("u", "prover", ObjectCategory::Generator, Value::Integer(u.clone())).map_err(|e| e.to_string())?;
-    t.add("p", "prover", ObjectCategory::Generator, Value::Integer(p.clone())).map_err(|e| e.to_string())?;
-    t.add("q", "prover", ObjectCategory::Generator, Value::Integer(q.clone())).map_err(|e| e.to_string())?;
+    t.add_public_key("m", Value::Integer(m_bi)).map_err(|e| e.to_string())?;
+    t.add_public_key("n", Value::Integer(n_bi)).map_err(|e| e.to_string())?;
+    t.add_public_key("g_vec", to_list(&g_vec)).map_err(|e| e.to_string())?;
+    t.add_public_key("h_vec", to_list(&h_vec)).map_err(|e| e.to_string())?;
+    t.add_generator_for("g", "prover", Value::Integer(g.clone())).map_err(|e| e.to_string())?;
+    t.add_generator_for("h", "prover", Value::Integer(h.clone())).map_err(|e| e.to_string())?;
+    t.add_generator_for("u", "prover", Value::Integer(u.clone())).map_err(|e| e.to_string())?;
+    t.add_generator_for("p", "prover", Value::Integer(p.clone())).map_err(|e| e.to_string())?;
+    t.add_generator_for("q", "prover", Value::Integer(q.clone())).map_err(|e| e.to_string())?;
 
     let a_l: Vec<BigInt> = (0..n).map(|_| BigInt::from(rng.gen_range(0..2u8))).collect();
     let a_r: Vec<BigInt> = a_l.iter().map(|a| (a - BigInt::one()).mod_floor(&q)).collect();
@@ -129,12 +129,12 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let alpha = rand_q(&mut rng);
     let ro = rand_q(&mut rng);
 
-    t.add("a_L", "prover", ObjectCategory::Constant, to_list(&a_l)).map_err(|e| e.to_string())?;
-    t.add("a_R", "prover", ObjectCategory::Constant, to_list(&a_r)).map_err(|e| e.to_string())?;
-    t.add("s_L", "prover", ObjectCategory::Constant, to_list(&s_l)).map_err(|e| e.to_string())?;
-    t.add("s_R", "prover", ObjectCategory::Constant, to_list(&s_r)).map_err(|e| e.to_string())?;
-    t.add("alpha", "prover", ObjectCategory::Constant, Value::Integer(alpha.clone())).map_err(|e| e.to_string())?;
-    t.add("ro", "prover", ObjectCategory::Constant, Value::Integer(ro.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("a_L", to_list(&a_l)).map_err(|e| e.to_string())?;
+    t.add_constant("a_R", to_list(&a_r)).map_err(|e| e.to_string())?;
+    t.add_constant("s_L", to_list(&s_l)).map_err(|e| e.to_string())?;
+    t.add_constant("s_R", to_list(&s_r)).map_err(|e| e.to_string())?;
+    t.add_constant("alpha", Value::Integer(alpha.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("ro", Value::Integer(ro.clone())).map_err(|e| e.to_string())?;
 
     let mut big_a = gexp(&h, &alpha);
     let mut big_s = gexp(&h, &ro);
@@ -144,8 +144,8 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
         big_s = (&big_s * gexp(&g_vec[i], &s_l[i])).mod_floor(&p);
         big_s = (&big_s * gexp(&h_vec[i], &s_r[i])).mod_floor(&p);
     }
-    t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
-    t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
+    t.add_commitment("A", Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
+    t.add_commitment("S", Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
 
     let yz_tags = t
         .record_challenges::<Sha3_256>(&["y", "z"], &["A", "S"], &q)
@@ -159,15 +159,15 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let t2 = rand_q(&mut rng);
     let tau1 = rand_q(&mut rng);
     let tau2 = rand_q(&mut rng);
-    t.add("t1", "prover", ObjectCategory::Constant, Value::Integer(t1.clone())).map_err(|e| e.to_string())?;
-    t.add("t2", "prover", ObjectCategory::Constant, Value::Integer(t2.clone())).map_err(|e| e.to_string())?;
-    t.add("tau1", "prover", ObjectCategory::Constant, Value::Integer(tau1.clone())).map_err(|e| e.to_string())?;
-    t.add("tau2", "prover", ObjectCategory::Constant, Value::Integer(tau2.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("t1", Value::Integer(t1.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("t2", Value::Integer(t2.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("tau1", Value::Integer(tau1.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("tau2", Value::Integer(tau2.clone())).map_err(|e| e.to_string())?;
 
     let big_t1 = (gexp(&g, &t1) * gexp(&h, &tau1)).mod_floor(&p);
     let big_t2 = (gexp(&g, &t2) * gexp(&h, &tau2)).mod_floor(&p);
-    t.add("T1", "prover", ObjectCategory::Commitment, Value::Integer(big_t1.clone())).map_err(|e| e.to_string())?;
-    t.add("T2", "prover", ObjectCategory::Commitment, Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
+    t.add_commitment("T1", Value::Integer(big_t1.clone())).map_err(|e| e.to_string())?;
+    t.add_commitment("T2", Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
 
     let x_tag = t.record_challenge::<Sha3_256>("x", &["A", "S", "T1", "T2"], &q).map_err(|e| e.to_string())?;
     let x_val = x_tag.as_bigint().ok_or("x must be Integer")?;
@@ -192,11 +192,11 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let mu = (&alpha + &ro * x_val).mod_floor(&q);
     let tau_x = rand_q(&mut rng);
 
-    t.add("l", "prover", ObjectCategory::Constant, to_list(&l)).map_err(|e| e.to_string())?;
-    t.add("r", "prover", ObjectCategory::Constant, to_list(&r)).map_err(|e| e.to_string())?;
-    t.add("t_hat", "prover", ObjectCategory::Constant, Value::Integer(t_hat.clone())).map_err(|e| e.to_string())?;
-    t.add("mu", "prover", ObjectCategory::Constant, Value::Integer(mu.clone())).map_err(|e| e.to_string())?;
-    t.add("tau_x", "prover", ObjectCategory::Constant, Value::Integer(tau_x.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("l", to_list(&l)).map_err(|e| e.to_string())?;
+    t.add_constant("r", to_list(&r)).map_err(|e| e.to_string())?;
+    t.add_constant("t_hat", Value::Integer(t_hat.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("mu", Value::Integer(mu.clone())).map_err(|e| e.to_string())?;
+    t.add_constant("tau_x", Value::Integer(tau_x.clone())).map_err(|e| e.to_string())?;
 
     let w_tag = t.record_challenge::<Sha3_256>("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], &q)
         .map_err(|e| e.to_string())?;
@@ -234,10 +234,10 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     }
     p_prime = (&p_prime * gexp(&u_prime, &t_hat)).mod_floor(&p);
 
-    t.add("h_prime", "prover", ObjectCategory::Constant, to_list(&h_prime)).map_err(|e| e.to_string())?;
-    t.add("u_prime", "prover", ObjectCategory::Constant, Value::Integer(u_prime)).map_err(|e| e.to_string())?;
-    t.add("P_prime", "prover", ObjectCategory::Constant, Value::Integer(p_prime)).map_err(|e| e.to_string())?;
-    t.add("pi_BP_IPA", "prover", ObjectCategory::Constant, Value::List(vec![
+    t.add_constant("h_prime", to_list(&h_prime)).map_err(|e| e.to_string())?;
+    t.add_constant("u_prime", Value::Integer(u_prime)).map_err(|e| e.to_string())?;
+    t.add_constant("P_prime", Value::Integer(p_prime)).map_err(|e| e.to_string())?;
+    t.add_constant("pi_BP_IPA", Value::List(vec![
         Value::Integer(t_hat.clone()), Value::Integer(mu.clone())
     ])).map_err(|e| e.to_string())?;
 
@@ -256,8 +256,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
         let vj_pt = (gexp(&g, &vj) * gexp(&h, &gj)).mod_floor(&p);
         big_v.push(vj_pt);
     }
-    t.add("V", "prover", ObjectCategory::Constant,
-          Value::List(big_v.iter().cloned().map(Value::Integer).collect()))
+    t.add_constant("V", Value::List(big_v.iter().cloned().map(Value::Integer).collect()))
         .map_err(|e| e.to_string())?;
 
     let mut proof = HashMap::new();

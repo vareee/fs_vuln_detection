@@ -19,6 +19,8 @@ pub enum TranscriptError {
     GeneratorNotInFirstChallenge,
     NotEveryProverMessagesIncluded,
     DuplicateElementsInChallenge,
+    EmptyElementLabel,
+    DuplicateElementLabel(String),
     DifferentTranscripts,
     TypeError(String),
     UnsafeCrossRoundInteraction(String, String),
@@ -39,6 +41,8 @@ impl fmt::Display for TranscriptError {
             TranscriptError::GeneratorNotInFirstChallenge => write!(f, "Generator-element was not included in the first challenge!"),
             TranscriptError::NotEveryProverMessagesIncluded => write!(f, "Not every prover's message was included in the challenge!"),
             TranscriptError::DuplicateElementsInChallenge => write!(f, "Challenge has duplicate objects to hash!"),
+            TranscriptError::EmptyElementLabel => write!(f, "Transcript element label cannot be empty!"),
+            TranscriptError::DuplicateElementLabel(label) => write!(f, "Transcript element label '{}' is already registered!", label),
             TranscriptError::TypeError(msg) => write!(f, "{}", msg),
             TranscriptError::DifferentTranscripts => write!(f, "Objects from different transcripts cannot interact!"),
             TranscriptError::UnsafeCrossRoundInteraction(o1, o2) => write!(f, "Objects '{}' and '{}' from different rounds interact!", o1, o2),
@@ -351,6 +355,7 @@ struct TranscriptElement {
     category: ObjectCategory,
     #[allow(dead_code)] index: usize,
     round: usize,
+    #[allow(dead_code)]
     tagged_value: TaggedValue,
 }
 
@@ -433,8 +438,11 @@ impl TranscriptInspector {
         category: ObjectCategory,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        if let Some(e) = self.elements.get(name) {
-            return Ok(e.tagged_value.clone());
+        if name.is_empty() {
+            return Err(TranscriptError::EmptyElementLabel);
+        }
+        if self.elements.contains_key(name) {
+            return Err(TranscriptError::DuplicateElementLabel(name.to_string()));
         }
         if matches!(category, ObjectCategory::Commitment | ObjectCategory::Pubkey)
             && !self.challenges.is_empty()
@@ -568,11 +576,13 @@ impl TranscriptInspector {
             ));
         }
         for challenge_name in challenge_names {
+            if challenge_name.is_empty() {
+                return Err(TranscriptError::EmptyElementLabel);
+            }
             if self.elements.contains_key(*challenge_name) {
-                return Err(TranscriptError::TypeError(format!(
-                    "Transcript element '{}' already exists",
-                    challenge_name,
-                )));
+                return Err(TranscriptError::DuplicateElementLabel(
+                    challenge_name.to_string()
+                ));
             }
         }
 
@@ -835,6 +845,35 @@ mod tests {
         assert_eq!(transcript.elements["g"].subject, "verifier");
         assert_eq!(transcript.elements["pk"].subject, "prover");
         assert_eq!(transcript.elements["message"].subject, "prover2");
+    }
+
+    #[test]
+    fn repeated_element_label_is_rejected_without_mutation() {
+        let mut transcript = TranscriptInspector::with_label(b"repeated-label");
+        transcript.add_commitment("element", Value::int(2)).unwrap();
+        let transcript_before = transcript.transcript_bytes().to_vec();
+        let elements_before = transcript.elements.len();
+
+        let result = transcript.add_message("element", Value::int(3));
+
+        assert!(matches!(
+            result,
+            Err(TranscriptError::DuplicateElementLabel(label)) if label == "element"
+        ));
+        assert_eq!(transcript.transcript_bytes(), transcript_before);
+        assert_eq!(transcript.elements.len(), elements_before);
+    }
+
+    #[test]
+    fn empty_element_label_is_rejected_without_mutation() {
+        let mut transcript = TranscriptInspector::with_label(b"empty-label");
+        let transcript_before = transcript.transcript_bytes().to_vec();
+
+        let result = transcript.add_message("", Value::int(3));
+
+        assert!(matches!(result, Err(TranscriptError::EmptyElementLabel)));
+        assert_eq!(transcript.transcript_bytes(), transcript_before);
+        assert!(transcript.elements.is_empty());
     }
 
     #[test]

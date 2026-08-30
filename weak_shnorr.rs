@@ -225,21 +225,17 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e1_msg = (&e1 * &msg).map_err(|e| format!("Detected: {}", e))?;
-    let z1 = (&A - &e1_msg).map_err(|e| format!("Detected: {}", e))?;
-    let _z1 = t.add("Z1", "prover", ObjectCategory::Response, z1.value)
-        .map_err(|e| format!("Detected: {}", e))?;
-    t.record_challenge_multiplication("Z1", "e1")
+    let e1_msg = (e1 * msg.clone()).map_err(|e| format!("Detected: {}", e))?;
+    let z1 = (A.clone() - e1_msg).map_err(|e| format!("Detected: {}", e))?;
+    let _z1 = t.add_response("Z1", z1.value, &["e1"])
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2 = t.record_challenge::<Sha3_256>("e2", &["A", "R", "msg", "gen", "Z1"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e2_msg = (&e2 * &msg).map_err(|e| format!("Detected: {}", e))?;
-    let z2 = (&A - &e2_msg).map_err(|e| format!("Detected: {}", e))?;
-    t.add("Z2", "prover", ObjectCategory::Response, z2.value)
-        .map_err(|e| format!("Detected: {}", e))?;
-    t.record_challenge_multiplication("Z2", "e2")
+    let e2_msg = (e2 * msg).map_err(|e| format!("Detected: {}", e))?;
+    let z2 = (A - e2_msg).map_err(|e| format!("Detected: {}", e))?;
+    t.add_response("Z2", z2.value, &["e2"])
         .map_err(|e| format!("Detected: {}", e))?;
 
     match t.check_cross_round_interaction("Z2", "A") {

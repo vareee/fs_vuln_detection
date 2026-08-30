@@ -295,6 +295,30 @@ impl<'a, 'b> std::ops::Mul<&'b TaggedValue> for &'a TaggedValue {
     }
 }
 
+impl std::ops::Add for TaggedValue {
+    type Output = Result<TaggedValue, TranscriptError>;
+
+    fn add(self, other: TaggedValue) -> Self::Output {
+        &self + &other
+    }
+}
+
+impl std::ops::Sub for TaggedValue {
+    type Output = Result<TaggedValue, TranscriptError>;
+
+    fn sub(self, other: TaggedValue) -> Self::Output {
+        &self - &other
+    }
+}
+
+impl std::ops::Mul for TaggedValue {
+    type Output = Result<TaggedValue, TranscriptError>;
+
+    fn mul(self, other: TaggedValue) -> Self::Output {
+        &self * &other
+    }
+}
+
 
 #[derive(Debug, Clone)]
 struct TranscriptElement {
@@ -499,6 +523,52 @@ impl TranscriptInspector {
         Ok(())
     }
 
+    /// Add a prover response and atomically register the challenges used to
+    /// construct it. Validation happens before the transcript is changed.
+    pub fn add_response(
+        &mut self,
+        name: &str,
+        value: Value,
+        challenge_names: &[&str],
+    ) -> Result<TaggedValue, TranscriptError> {
+        if let Some(existing) = self.elements.get(name) {
+            if existing.category != ObjectCategory::Response {
+                return Err(TranscriptError::TypeError(format!(
+                    "Element '{}' already exists and is not a response",
+                    name,
+                )));
+            }
+        }
+        for challenge_name in challenge_names {
+            let challenge = self.elements.get(*challenge_name).ok_or_else(|| {
+                TranscriptError::TypeError(format!(
+                    "Unknown challenge '{}'",
+                    challenge_name,
+                ))
+            })?;
+            if challenge.category != ObjectCategory::Challenge {
+                return Err(TranscriptError::TypeError(format!(
+                    "Element '{}' is not a challenge",
+                    challenge_name,
+                )));
+            }
+            if challenge.round >= self.round {
+                return Err(TranscriptError::UnsafeCrossRoundInteraction(
+                    name.to_string(),
+                    (*challenge_name).to_string(),
+                ));
+            }
+        }
+
+        let tagged = self.add(name, "prover", ObjectCategory::Response, value)?;
+        let multiplications = self
+            .challenges_mul
+            .get_mut(name)
+            .expect("Every transcript element has challenge metadata");
+        multiplications.extend(challenge_names.iter().map(|name| (*name).to_string()));
+        Ok(tagged)
+    }
+
     // detect errors in cross-round interaction
     pub fn check_cross_round_interaction(
         &self, object1: &str, object2: &str,
@@ -614,5 +684,54 @@ mod tests {
             transcript.record_challenge_multiplication("z", "g"),
             Err(TranscriptError::TypeError(_))
         ));
+    }
+
+    #[test]
+    fn owned_tagged_values_support_natural_rust_operators() {
+        let transcript = TranscriptInspector::new();
+        let e = transcript.tag(Value::int(7));
+        let message = transcript.tag(Value::int(3));
+        let public_key = transcript.tag(Value::int(29));
+
+        let e_msg = (e * message).unwrap();
+        let response = (public_key - e_msg).unwrap();
+
+        assert_eq!(response.as_bigint(), Some(&BigInt::from(8)));
+    }
+
+    #[test]
+    fn add_response_registers_challenge_multiplication_atomically() {
+        use sha3::Sha3_256;
+
+        let mut transcript = TranscriptInspector::with_label(b"response-api");
+        transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.add_response("z", Value::int(5), &["e"]).unwrap();
+
+        assert!(transcript.check_cross_round_interaction("z", "g").is_ok());
+    }
+
+    #[test]
+    fn add_response_does_not_mutate_transcript_when_challenge_is_invalid() {
+        let mut transcript = TranscriptInspector::with_label(b"response-api-invalid");
+        let before = transcript.transcript_bytes().to_vec();
+
+        assert!(transcript.add_response("z", Value::int(5), &["missing"]).is_err());
+        assert_eq!(transcript.transcript_bytes(), before);
+        assert!(!transcript.elements.contains_key("z"));
+    }
+
+    #[test]
+    fn add_response_rejects_name_of_an_existing_non_response() {
+        let mut transcript = TranscriptInspector::with_label(b"response-name-collision");
+        transcript.add("z", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        let before = transcript.transcript_bytes().to_vec();
+
+        assert!(matches!(
+            transcript.add_response("z", Value::int(5), &[]),
+            Err(TranscriptError::TypeError(_))
+        ));
+        assert_eq!(transcript.transcript_bytes(), before);
     }
 }

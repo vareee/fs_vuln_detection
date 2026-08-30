@@ -78,7 +78,7 @@ def forge_bulletproof(params):
     t2 = transcript.add(name="t2", subject="prover", category=ObjectCategory.Constant, value=random.randint(0, q - 1))
     tau1 = transcript.add(name="tau1", subject="prover", category=ObjectCategory.Constant, value=random.randint(0, q - 1))
     tau2 = transcript.add(name="tau2", subject="prover", category=ObjectCategory.Constant, value=random.randint(0, q - 1))
-    T1 = transcript.add(name="T2", subject="prover", category=ObjectCategory.Commitment, value=(gexp(g, t1) * gexp(h, tau1)) % p)
+    T1 = transcript.add(name="T1", subject="prover", category=ObjectCategory.Commitment, value=(gexp(g, t1) * gexp(h, tau1)) % p)
     T2 = transcript.add(name="T2", subject="prover", category=ObjectCategory.Commitment, value=(gexp(g, t2) * gexp(h, tau2)) % p)
 
     for x in str(T1):

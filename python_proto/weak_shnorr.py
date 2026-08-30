@@ -177,7 +177,7 @@ try:
 
     a1 = random.randint(1, curve_order - 1)
     A1 = transcript_safe.add(name="A1", subject="prover1", category=ObjectCategory.Pubkey, value=G1*a1)
-
+    
     k1 = random.randint(1, curve_order - 1)
     R1 = transcript_safe.add(name="R1", subject="prover1", category=ObjectCategory.Commitment, value=G1*k1)
     

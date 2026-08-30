@@ -274,10 +274,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn forge_is_rejected() {
+    fn test_forged_bulletproofs() {
         let params = setup(23, 17);
+
         let res = forge_bulletproof(&params);
-        assert!(res.is_err(), "expected detector to reject, got {:?}", res.is_ok());
+
+        if let Err(e) = &res {
+            println!("Forgery rejected: {}", e);
+        }
+
+        assert!(res.is_err(), "expected detector to reject");
     }
 
     #[test]

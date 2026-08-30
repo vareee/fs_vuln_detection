@@ -462,6 +462,43 @@ impl TranscriptInspector {
         Ok(tagged)
     }
 
+    /// record that a transcript element was multiplied by a challenge
+    pub fn record_challenge_multiplication(
+        &mut self,
+        element_name: &str,
+        challenge_name: &str,
+    ) -> Result<(), TranscriptError> {
+        let element = self.elements.get(element_name).ok_or_else(|| {
+            TranscriptError::TypeError(format!(
+                "Unknown transcript element '{}'",
+                element_name,
+            ))
+        })?;
+        let challenge = self.elements.get(challenge_name).ok_or_else(|| {
+            TranscriptError::TypeError(format!(
+                "Unknown challenge '{}'",
+                challenge_name,
+            ))
+        })?;
+        if challenge.category != ObjectCategory::Challenge {
+            return Err(TranscriptError::TypeError(format!(
+                "Element '{}' is not a challenge",
+                challenge_name,
+            )));
+        }
+        if challenge.round >= element.round {
+            return Err(TranscriptError::UnsafeCrossRoundInteraction(
+                element_name.to_string(),
+                challenge_name.to_string(),
+            ));
+        }
+        self.challenges_mul
+            .get_mut(element_name)
+            .expect("Every transcript element has challenge metadata")
+            .insert(challenge_name.to_string());
+        Ok(())
+    }
+
     // detect errors in cross-round interaction
     pub fn check_cross_round_interaction(
         &self, object1: &str, object2: &str,
@@ -535,5 +572,47 @@ mod tests {
         let v2 = TaggedValue::new(Value::Integer(BigInt::from(2)), b
         .get_transcript_id());
         assert!((&v1 + &v2).is_err());
+    }
+
+    #[test]
+    fn cross_round_interaction_is_safe_after_challenge_multiplication() {
+        use sha3::Sha3_256;
+
+        let mut transcript = TranscriptInspector::with_label(b"cross-round-safe");
+        transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
+        transcript.record_challenge_multiplication("z", "e").unwrap();
+
+        assert!(transcript.check_cross_round_interaction("z", "g").is_ok());
+    }
+
+    #[test]
+    fn cross_round_interaction_without_challenge_multiplication_is_rejected() {
+        use sha3::Sha3_256;
+
+        let mut transcript = TranscriptInspector::with_label(b"cross-round-unsafe");
+        transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
+
+        assert!(matches!(
+            transcript.check_cross_round_interaction("z", "g"),
+            Err(TranscriptError::UnsafeCrossRoundInteraction(_, _))
+        ));
+    }
+
+    #[test]
+    fn challenge_multiplication_rejects_non_challenge_elements() {
+        let mut transcript = TranscriptInspector::with_label(b"cross-round-invalid-challenge");
+        transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
+
+        assert!(matches!(
+            transcript.record_challenge_multiplication("z", "g"),
+            Err(TranscriptError::TypeError(_))
+        ));
     }
 }

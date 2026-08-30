@@ -166,9 +166,12 @@ pub fn serialize_tagged(tv: &TaggedValue) -> Vec<u8> {
     }
 }
 
+/// arithmetic checks that both operands have the same `transcript_id` and returns a new `TaggedValue`
 #[derive(Debug, Clone)]
 pub struct TaggedValue {
+    /// algebraic value owned by this wrapper
     pub value: Value,
+    /// id of the only transcript in which this value may participate
     pub transcript_id: Uuid,
 }
 
@@ -423,7 +426,13 @@ impl TranscriptInspector {
     }
 
     // add object to transcript (who did it, its category (pubkey, challenge, ...), its number in transcript and round number)
-    pub fn add(&mut self, name: &str, subject: &str, category: ObjectCategory, value: Value) -> Result<TaggedValue, TranscriptError> {
+    pub fn add(
+        &mut self,
+        name: &str,
+        subject: &str,
+        category: ObjectCategory,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
         if let Some(e) = self.elements.get(name) {
             return Ok(e.tagged_value.clone());
         }
@@ -452,11 +461,94 @@ impl TranscriptInspector {
         Ok(tagged)
     }
 
+    /// add a verifier-provided generator
+    pub fn add_generator(
+        &mut self,
+        name: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add_generator_for(name, "verifier", value)
+    }
+
+    /// add a generator associated with an explicitly named participant
+    pub fn add_generator_for(
+        &mut self,
+        name: &str,
+        subject: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add(name, subject, ObjectCategory::Generator, value)
+    }
+
+    /// add a public key owned by the default prover
+    pub fn add_public_key(
+        &mut self,
+        name: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add_public_key_for(name, "prover", value)
+    }
+
+    /// add a public key owned by an explicitly named participant
+    pub fn add_public_key_for(
+        &mut self,
+        name: &str,
+        subject: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add(name, subject, ObjectCategory::Pubkey, value)
+    }
+
+    /// add a commitment owned by the default prover
+    pub fn add_commitment(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_commitment_for(name, "prover", value)
+    }
+
+    /// add a commitment owned by an explicitly named participant
+    pub fn add_commitment_for(
+        &mut self,
+        name: &str,
+        subject: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add(name, subject, ObjectCategory::Commitment, value)
+    }
+
+    /// add a message owned by the default prover
+    pub fn add_message(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_message_for(name, "prover", value)
+    }
+
+    /// add a message owned by an explicitly named participant
+    pub fn add_message_for(
+        &mut self,
+        name: &str,
+        subject: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add(name, subject, ObjectCategory::Message, value)
+    }
+
+    /// add a constant owned by the default prover
+    pub fn add_constant(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_constant_for(name, "prover", value)
+    }
+
+    /// add a constant owned by an explicitly named participant
+    pub fn add_constant_for(
+        &mut self,
+        name: &str,
+        subject: &str,
+        value: Value
+    ) -> Result<TaggedValue, TranscriptError> {
+        self.add(name, subject, ObjectCategory::Constant, value)
+    }
+
     fn validate_challenge_batch(
         &self,
         challenge_names: &[&str],
         used_names: &[&str],
-        curve_order: &BigInt,
+        curve_order: &BigInt
     ) -> Result<HashSet<String>, TranscriptError> {
         if challenge_names.is_empty() {
             return Err(TranscriptError::TypeError(
@@ -527,13 +619,12 @@ impl TranscriptInspector {
         Ok(used_set)
     }
 
-    /// Create several Fiat-Shamir challenges in one logical protocol round.
-    /// The entire batch is validated before the transcript is modified.
+    /// create several Fiat-Shamir challenges in one logical protocol round
     pub fn record_challenges<H: FSHash>(
         &mut self,
         challenge_names: &[&str],
         used_names: &[&str],
-        curve_order: &BigInt,
+        curve_order: &BigInt
     ) -> Result<Vec<TaggedValue>, TranscriptError> {
         let used_set = self.validate_challenge_batch(
             challenge_names,
@@ -573,7 +664,7 @@ impl TranscriptInspector {
     pub fn record_challenge_multiplication(
         &mut self,
         element_name: &str,
-        challenge_name: &str,
+        challenge_name: &str
     ) -> Result<(), TranscriptError> {
         let element = self.elements.get(element_name).ok_or_else(|| {
             TranscriptError::TypeError(format!(
@@ -606,13 +697,13 @@ impl TranscriptInspector {
         Ok(())
     }
 
-    /// Add a prover response and atomically register the challenges used to
-    /// construct it. Validation happens before the transcript is changed.
+    /// add a prover response and atomically register the challenges used to
+    /// construct it; validation happens before the transcript is changed
     pub fn add_response(
         &mut self,
         name: &str,
         value: Value,
-        challenge_names: &[&str],
+        challenge_names: &[&str]
     ) -> Result<TaggedValue, TranscriptError> {
         if self.elements.contains_key(name) {
             return Err(TranscriptError::TypeError(format!(
@@ -652,7 +743,7 @@ impl TranscriptInspector {
 
     // detect errors in cross-round interaction
     pub fn check_cross_round_interaction(
-        &self, object1: &str, object2: &str,
+        &self, object1: &str, object2: &str
     ) -> Result<(), TranscriptError> {
         let info1 = self.elements.get(object1).ok_or_else(||
             TranscriptError::UnsafeCrossRoundInteraction(object1.into(), object2.into()))?;
@@ -723,6 +814,26 @@ mod tests {
         let v2 = TaggedValue::new(Value::Integer(BigInt::from(2)), b
         .get_transcript_id());
         assert!((&v1 + &v2).is_err());
+    }
+
+    #[test]
+    fn test_specialized_add_methods() {
+        let mut transcript = TranscriptInspector::with_label(b"specialized-add-methods");
+
+        transcript.add_generator("g", Value::int(2)).unwrap();
+        transcript.add_public_key("pk", Value::int(3)).unwrap();
+        transcript.add_commitment("commitment", Value::int(5)).unwrap();
+        transcript.add_message_for("message", "prover2", Value::int(7)).unwrap();
+        transcript.add_constant("constant", Value::int(11)).unwrap();
+
+        assert_eq!(transcript.elements["g"].category, ObjectCategory::Generator);
+        assert_eq!(transcript.elements["pk"].category, ObjectCategory::Pubkey);
+        assert_eq!(transcript.elements["commitment"].category, ObjectCategory::Commitment);
+        assert_eq!(transcript.elements["message"].category, ObjectCategory::Message);
+        assert_eq!(transcript.elements["constant"].category, ObjectCategory::Constant);
+        assert_eq!(transcript.elements["g"].subject, "verifier");
+        assert_eq!(transcript.elements["pk"].subject, "prover");
+        assert_eq!(transcript.elements["message"].subject, "prover2");
     }
 
     #[test]

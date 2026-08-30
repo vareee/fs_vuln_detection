@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use rand::Rng;
 use sha3::Sha3_256;
 use num_bigint::{BigInt, RandBigInt};
-use num_traits::{One, Zero};
+use num_traits::{One, ToPrimitive, Zero};
 use num_integer::Integer;
 use crate::poc::{
     mod_inverse, ObjectCategory, TranscriptInspector, Value,
@@ -99,8 +99,8 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
 
     let m_bi = extract_int(params.get("m").ok_or("missing m")?, "m")?;
     let n_bi = extract_int(params.get("n").ok_or("missing n")?, "n")?;
-    let m: i64 = m_bi.clone().try_into().map_err(|_| "m out of range")?;
-    let n: i64 = n_bi.clone().try_into().map_err(|_| "n out of range")?;
+    let m = m_bi.to_i64().ok_or("m out of range")?;
+    let n = n_bi.to_i64().ok_or("n out of range")?;
 
     let g_vec = extract_list(params.get("g_vec").ok_or("missing g_vec")?, "g_vec")?;
     let h_vec = extract_list(params.get("h_vec").ok_or("missing h_vec")?, "h_vec")?;
@@ -108,10 +108,12 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let h = extract_int(params.get("h").ok_or("missing h")?, "h")?;
     let u = extract_int(params.get("u").ok_or("missing u")?, "u")?;
 
-    let to_list = |v: &Vec<BigInt>| Value::List(v.iter().cloned().map(Value::Integer).collect());
+    let to_list = |values: &[BigInt]| {
+        Value::List(values.iter().cloned().map(Value::Integer).collect())
+    };
 
-    t.add("m", "prover", ObjectCategory::Pubkey, Value::Integer(m_bi.clone())).map_err(|e| e.to_string())?;
-    t.add("n", "prover", ObjectCategory::Pubkey, Value::Integer(n_bi.clone())).map_err(|e| e.to_string())?;
+    t.add("m", "prover", ObjectCategory::Pubkey, Value::Integer(m_bi)).map_err(|e| e.to_string())?;
+    t.add("n", "prover", ObjectCategory::Pubkey, Value::Integer(n_bi)).map_err(|e| e.to_string())?;
     t.add("g_vec", "prover", ObjectCategory::Pubkey, to_list(&g_vec)).map_err(|e| e.to_string())?;
     t.add("h_vec", "prover", ObjectCategory::Pubkey, to_list(&h_vec)).map_err(|e| e.to_string())?;
     t.add("g", "prover", ObjectCategory::Generator, Value::Integer(g.clone())).map_err(|e| e.to_string())?;
@@ -145,14 +147,13 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
     t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
 
-    let mut yz_tags = t
+    let yz_tags = t
         .record_challenges::<Sha3_256>(&["y", "z"], &["A", "S"], &q)
-        .map_err(|e| e.to_string())?
-        .into_iter();
-    let y_tag = yz_tags.next().expect("the y challenge was generated");
-    let z_tag = yz_tags.next().expect("the z challenge was generated");
-    let y_val = y_tag.as_bigint().cloned().ok_or("y must be Integer")?;
-    let z_val = z_tag.as_bigint().cloned().ok_or("z must be Integer")?;
+        .map_err(|e| e.to_string())?;
+    let y_tag = yz_tags.first().ok_or("missing y challenge")?;
+    let z_tag = yz_tags.get(1).ok_or("missing z challenge")?;
+    let y_val = y_tag.as_bigint().ok_or("y must be Integer")?;
+    let z_val = z_tag.as_bigint().ok_or("z must be Integer")?;
 
     let t1 = rand_q(&mut rng);
     let t2 = rand_q(&mut rng);
@@ -169,17 +170,17 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("T2", "prover", ObjectCategory::Commitment, Value::Integer(big_t2.clone())).map_err(|e| e.to_string())?;
 
     let x_tag = t.record_challenge::<Sha3_256>("x", &["A", "S", "T1", "T2"], &q).map_err(|e| e.to_string())?;
-    let x_val = x_tag.as_bigint().cloned().ok_or("x must be Integer")?;
+    let x_val = x_tag.as_bigint().ok_or("x must be Integer")?;
 
     let l: Vec<BigInt> = (0..n as usize).map(|i| {
-        ((&a_l[i] - &z_val) + (&s_l[i] * &x_val)).mod_floor(&q)
+        ((&a_l[i] - z_val) + (&s_l[i] * x_val)).mod_floor(&q)
     }).collect();
 
     let z2 = z_val.modpow(&BigInt::from(2), &q);
     let r: Vec<BigInt> = (0..n as usize).map(|i| {
         let yi = y_val.modpow(&BigInt::from(i as u64), &q);
         let twoi = BigInt::from(2).modpow(&BigInt::from(i as u64), &q);
-        let term1 = (&yi * ((&a_r[i] + &z_val) + (&s_r[i] * &x_val))).mod_floor(&q);
+        let term1 = (&yi * ((&a_r[i] + z_val) + (&s_r[i] * x_val))).mod_floor(&q);
         let term2 = (&z2 * &twoi).mod_floor(&q);
         (term1 + term2).mod_floor(&q)
     }).collect();
@@ -188,7 +189,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     for i in 0..n as usize {
         t_hat = (t_hat + (&l[i] * &r[i]).mod_floor(&q)).mod_floor(&q);
     }
-    let mu = (&alpha + &ro * &x_val).mod_floor(&q);
+    let mu = (&alpha + &ro * x_val).mod_floor(&q);
     let tau_x = rand_q(&mut rng);
 
     t.add("l", "prover", ObjectCategory::Constant, to_list(&l)).map_err(|e| e.to_string())?;
@@ -199,7 +200,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
 
     let w_tag = t.record_challenge::<Sha3_256>("w", &["A", "S", "T1", "T2", "t_hat", "tau_x", "mu"], &q)
         .map_err(|e| e.to_string())?;
-    let w_val = w_tag.as_bigint().cloned().ok_or("w must be Integer")?;
+    let w_val = w_tag.as_bigint().ok_or("w must be Integer")?;
 
     let mn = (m * n) as usize;
     let y_pow = y_val.modpow(&BigInt::from((m * n) as u64), &q);
@@ -210,16 +211,16 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let neg_mu = (-&mu).mod_floor(&q);
     let mut p_prime = gexp(&h, &neg_mu);
     p_prime = (&p_prime * &big_a).mod_floor(&p);
-    p_prime = (&p_prime * gexp(&big_s, &x_val)).mod_floor(&p);
-    let neg_z = (-&z_val).mod_floor(&q);
+    p_prime = (&p_prime * gexp(&big_s, x_val)).mod_floor(&p);
+    let neg_z = (-z_val).mod_floor(&q);
     for gi in &g_vec {
         p_prime = (&p_prime * gexp(gi, &neg_z)).mod_floor(&p);
     }
     let mut y_exp = BigInt::one();
     for i in 0..mn {
-        let exp = (&z_val * &y_exp).mod_floor(&q);
+        let exp = (z_val * &y_exp).mod_floor(&q);
         p_prime = (&p_prime * gexp(&h_prime[i], &exp)).mod_floor(&p);
-        y_exp = (&y_exp * &y_val).mod_floor(&q);
+        y_exp = (&y_exp * y_val).mod_floor(&q);
     }
     for j in 1..=m {
         let z_exp = z_val.modpow(&BigInt::from((j + 1) as u64), &q);
@@ -234,14 +235,14 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     p_prime = (&p_prime * gexp(&u_prime, &t_hat)).mod_floor(&p);
 
     t.add("h_prime", "prover", ObjectCategory::Constant, to_list(&h_prime)).map_err(|e| e.to_string())?;
-    t.add("u_prime", "prover", ObjectCategory::Constant, Value::Integer(u_prime.clone())).map_err(|e| e.to_string())?;
-    t.add("P_prime", "prover", ObjectCategory::Constant, Value::Integer(p_prime.clone())).map_err(|e| e.to_string())?;
+    t.add("u_prime", "prover", ObjectCategory::Constant, Value::Integer(u_prime)).map_err(|e| e.to_string())?;
+    t.add("P_prime", "prover", ObjectCategory::Constant, Value::Integer(p_prime)).map_err(|e| e.to_string())?;
     t.add("pi_BP_IPA", "prover", ObjectCategory::Constant, Value::List(vec![
         Value::Integer(t_hat.clone()), Value::Integer(mu.clone())
     ])).map_err(|e| e.to_string())?;
 
-    let rhs_v = (&t_hat - &t1 * &x_val - &t2 * &x_val * &x_val - delta(&y_val, &z_val, m, n)).mod_floor(&q);
-    let rhs_g = (&tau_x - &tau1 * &x_val - &tau2 * &x_val * &x_val).mod_floor(&q);
+    let rhs_v = (&t_hat - &t1 * x_val - &t2 * x_val * x_val - delta(y_val, z_val, m, n)).mod_floor(&q);
+    let rhs_g = (&tau_x - &tau1 * x_val - &tau2 * x_val * x_val).mod_floor(&q);
 
     let mut big_v: Vec<BigInt> = Vec::new();
     for j in 1..=m {
@@ -301,10 +302,8 @@ mod tests {
     #[test]
     fn gexp_inverse_consistency() {
         let p = p_modulus();
-        let q = q_order();
         let b = BigInt::from(7);
         let r = gexp(&b, &BigInt::from(10));
         assert!(r >= BigInt::zero() && r < p);
-        let _ = q;
     }
 }

@@ -464,84 +464,84 @@ impl TranscriptInspector {
     /// add a verifier-provided generator
     pub fn add_generator(
         &mut self,
-        name: &str,
+        label: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add_generator_for(name, "verifier", value)
+        self.add_generator_for(label, "verifier", value)
     }
 
     /// add a generator associated with an explicitly named participant
     pub fn add_generator_for(
         &mut self,
-        name: &str,
+        label: &str,
         subject: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(name, subject, ObjectCategory::Generator, value)
+        self.add(label, subject, ObjectCategory::Generator, value)
     }
 
     /// add a public key owned by the default prover
     pub fn add_public_key(
         &mut self,
-        name: &str,
+        label: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add_public_key_for(name, "prover", value)
+        self.add_public_key_for(label, "prover", value)
     }
 
     /// add a public key owned by an explicitly named participant
     pub fn add_public_key_for(
         &mut self,
-        name: &str,
+        label: &str,
         subject: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(name, subject, ObjectCategory::Pubkey, value)
+        self.add(label, subject, ObjectCategory::Pubkey, value)
     }
 
     /// add a commitment owned by the default prover
-    pub fn add_commitment(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
-        self.add_commitment_for(name, "prover", value)
+    pub fn add_commitment(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_commitment_for(label, "prover", value)
     }
 
     /// add a commitment owned by an explicitly named participant
     pub fn add_commitment_for(
         &mut self,
-        name: &str,
+        label: &str,
         subject: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(name, subject, ObjectCategory::Commitment, value)
+        self.add(label, subject, ObjectCategory::Commitment, value)
     }
 
     /// add a message owned by the default prover
-    pub fn add_message(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
-        self.add_message_for(name, "prover", value)
+    pub fn add_message(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_message_for(label, "prover", value)
     }
 
     /// add a message owned by an explicitly named participant
     pub fn add_message_for(
         &mut self,
-        name: &str,
+        label: &str,
         subject: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(name, subject, ObjectCategory::Message, value)
+        self.add(label, subject, ObjectCategory::Message, value)
     }
 
     /// add a constant owned by the default prover
-    pub fn add_constant(&mut self, name: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
-        self.add_constant_for(name, "prover", value)
+    pub fn add_constant(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+        self.add_constant_for(label, "prover", value)
     }
 
     /// add a constant owned by an explicitly named participant
     pub fn add_constant_for(
         &mut self,
-        name: &str,
+        label: &str,
         subject: &str,
         value: Value
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(name, subject, ObjectCategory::Constant, value)
+        self.add(label, subject, ObjectCategory::Constant, value)
     }
 
     fn validate_challenge_batch(
@@ -764,6 +764,7 @@ impl TranscriptInspector {
             Err(TranscriptError::UnsafeCrossRoundInteraction(object1.into(), object2.into()))
         } else { Ok(()) }
     }
+
 }
 
 impl Default for TranscriptInspector { fn default() -> Self { Self::new() } }

@@ -145,8 +145,12 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     t.add("A", "prover", ObjectCategory::Commitment, Value::Integer(big_a.clone())).map_err(|e| e.to_string())?;
     t.add("S", "prover", ObjectCategory::Commitment, Value::Integer(big_s.clone())).map_err(|e| e.to_string())?;
 
-    let y_tag = t.record_challenge::<Sha3_256>("y", &["A", "S"], &q).map_err(|e| e.to_string())?;
-    let z_tag = t.record_challenge::<Sha3_256>("z", &["A", "S"], &q).map_err(|e| e.to_string())?;
+    let mut yz_tags = t
+        .record_challenges::<Sha3_256>(&["y", "z"], &["A", "S"], &q)
+        .map_err(|e| e.to_string())?
+        .into_iter();
+    let y_tag = yz_tags.next().expect("the y challenge was generated");
+    let z_tag = yz_tags.next().expect("the z challenge was generated");
     let y_val = y_tag.as_bigint().cloned().ok_or("y must be Integer")?;
     let z_val = z_tag.as_bigint().cloned().ok_or("z must be Integer")?;
 

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::borrow::Borrow;
 use std::fmt;
 use sha3::Digest;
 use uuid::Uuid;
@@ -185,6 +186,47 @@ impl TaggedValue {
         } else { Ok(()) }
     }
 
+    fn checked_add(&self, other: &TaggedValue) -> Result<TaggedValue, TranscriptError> {
+        self.ensure_same_transcript_id(other)?;
+        let value = match (&self.value, &other.value) {
+            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
+            (Value::Point(a), Value::Point(b)) => Value::Point(*a + *b),
+            _ => return Err(TranscriptError::TypeError(
+                "Unsupported types for addition!".to_string(),
+            )),
+        };
+        Ok(TaggedValue::new(value, self.transcript_id))
+    }
+
+    fn checked_sub(&self, other: &TaggedValue) -> Result<TaggedValue, TranscriptError> {
+        self.ensure_same_transcript_id(other)?;
+        let value = match (&self.value, &other.value) {
+            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
+            (Value::Point(a), Value::Point(b)) => Value::Point(*a - *b),
+            _ => return Err(TranscriptError::TypeError(
+                "Unsupported types for substraction!".into(),
+            )),
+        };
+        Ok(TaggedValue::new(value, self.transcript_id))
+    }
+
+    fn checked_mul(&self, other: &TaggedValue) -> Result<TaggedValue, TranscriptError> {
+        self.ensure_same_transcript_id(other)?;
+        let value = match (&self.value, &other.value) {
+            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
+            (Value::Integer(a), Value::Point(point)) => {
+                Value::Point(*point * bigint_to_scalar(a))
+            }
+            (Value::Point(point), Value::Integer(a)) => {
+                Value::Point(*point * bigint_to_scalar(a))
+            }
+            _ => return Err(TranscriptError::TypeError(
+                "Unsupported types for multiplication!".to_string(),
+            )),
+        };
+        Ok(TaggedValue::new(value, self.transcript_id))
+    }
+
     pub fn as_bigint(&self) -> Option<&BigInt> {
         if let Value::Integer(b) = &self.value { 
             Some(b) 
@@ -251,71 +293,51 @@ fn extended_gcd(a: BigInt, b: BigInt) -> (BigInt, BigInt, BigInt) {
     }
 }
 
-impl<'a, 'b> std::ops::Add<&'b TaggedValue> for &'a TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Add<Rhs> for TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
-    fn add(self, other: &'b TaggedValue) -> Self::Output {
-        self.ensure_same_transcript_id(other)?;
-        let v = match (&self.value, &other.value) {
-            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
-            (Value::Point(a), Value::Point(b)) => Value::Point(*a + *b),
-            _ => return Err(TranscriptError::TypeError("Unsupported types for addition!".to_string())),
-        };
-        Ok(TaggedValue::new(v, self.transcript_id))
+
+    fn add(self, other: Rhs) -> Self::Output {
+        self.checked_add(other.borrow())
     }
 }
 
-impl<'a, 'b> std::ops::Sub<&'b TaggedValue> for &'a TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Add<Rhs> for &TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
-    fn sub(self, other: &'b TaggedValue) -> Self::Output {
-        self.ensure_same_transcript_id(other)?;
-        let v = match (&self.value, &other.value) {
-            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
-            (Value::Point(a), Value::Point(b)) => Value::Point(*a - *b),
-            _ => return Err(TranscriptError::TypeError("Unsupported types for substraction!".into())),
-        };
-        Ok(TaggedValue::new(v, self.transcript_id))
+
+    fn add(self, other: Rhs) -> Self::Output {
+        self.checked_add(other.borrow())
     }
 }
 
-impl<'a, 'b> std::ops::Mul<&'b TaggedValue> for &'a TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Sub<Rhs> for TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
-    fn mul(self, other: &'b TaggedValue) -> Self::Output {
-        self.ensure_same_transcript_id(other)?;
-        let v = match (&self.value, &other.value) {
-            (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
-            (Value::Integer(a), Value::Point(p)) => {
-                Value::Point(*p * bigint_to_scalar(a))
-            }
-            (Value::Point(p), Value::Integer(a)) => {
-                Value::Point(*p * bigint_to_scalar(a))
-            }
-            _ => return Err(TranscriptError::TypeError("Unsupported types for multiplication!".to_string())),
-        };
-        Ok(TaggedValue::new(v, self.transcript_id))
+
+    fn sub(self, other: Rhs) -> Self::Output {
+        self.checked_sub(other.borrow())
     }
 }
 
-impl std::ops::Add for TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Sub<Rhs> for &TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
 
-    fn add(self, other: TaggedValue) -> Self::Output {
-        &self + &other
+    fn sub(self, other: Rhs) -> Self::Output {
+        self.checked_sub(other.borrow())
     }
 }
 
-impl std::ops::Sub for TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Mul<Rhs> for TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
 
-    fn sub(self, other: TaggedValue) -> Self::Output {
-        &self - &other
+    fn mul(self, other: Rhs) -> Self::Output {
+        self.checked_mul(other.borrow())
     }
 }
 
-impl std::ops::Mul for TaggedValue {
+impl<Rhs: Borrow<TaggedValue>> std::ops::Mul<Rhs> for &TaggedValue {
     type Output = Result<TaggedValue, TranscriptError>;
 
-    fn mul(self, other: TaggedValue) -> Self::Output {
-        &self * &other
+    fn mul(self, other: Rhs) -> Self::Output {
+        self.checked_mul(other.borrow())
     }
 }
 

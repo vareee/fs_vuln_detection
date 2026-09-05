@@ -26,10 +26,9 @@ fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> Tagg
 
 // example of safe transcript
 pub fn safe_transcript_example() -> Result<String, String> {
+    let mut t = TranscriptInspector::with_label(b"safe_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
-    let mut t = TranscriptInspector::new(b"safe_transcript", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
 
     let g = add_generator(&mut t, "gen", "prover1");
 
@@ -63,7 +62,7 @@ pub fn safe_transcript_example() -> Result<String, String> {
     t.add_message_for("message", "prover2", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"])
+    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())
@@ -71,10 +70,9 @@ pub fn safe_transcript_example() -> Result<String, String> {
 
 // example of transcript with TranscriptError
 pub fn transcript_error_example() -> Result<String, String> {
+    let mut t = TranscriptInspector::with_label(b"transcript_with_order_error");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
-    let mut t = TranscriptInspector::new(b"transcript_with_order_error", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
 
     let g = add_generator(&mut t, "gen", "prover1");
 
@@ -96,7 +94,7 @@ pub fn transcript_error_example() -> Result<String, String> {
     t.add_commitment_for("R1", "prover1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    t.record_challenge::<Sha3_256>("e1", &["A1", "R1", "msg", "gen"])
+    t.record_challenge::<Sha3_256>("e1", &["A1", "R1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t.add_constant_for("a2", "prover2", Value::Integer(rand_scalar(&mut rng)))
@@ -122,8 +120,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
-    let mut t1 = TranscriptInspector::new(b"cross_transcript_1", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
+    let mut t1 = TranscriptInspector::with_label(b"cross_transcript_1");
     let g1 = add_generator(&mut t1, "gen", "prover");
     let n1 = t1.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -146,7 +143,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     t1.add_commitment("R1", R1.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e1 = t1.record_challenge::<Sha3_256>("e1", &["R1", "A1", "msg", "gen"])
+    let e1 = t1.record_challenge::<Sha3_256>("e1", &["R1", "A1", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let prod = (&e1 * a1).map_err(|e| format!("Detected: {}", e))?;
@@ -155,8 +152,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let s1 = t1.add_message("s1", s1_red.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut t2 = TranscriptInspector::new(b"cross_transcript_error_2", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
+    let mut t2 = TranscriptInspector::with_label(b"cross_transcript_error_2");
     let g2 = add_generator(&mut t2, "gen", "prover");
     let n2 = t2.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -179,7 +175,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let R2 = t2.add_commitment("R2", R2.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e2 = t2.record_challenge::<Sha3_256>("e2", &["R2", "A2", "msg", "gen"])
+    let e2 = t2.record_challenge::<Sha3_256>("e2", &["R2", "A2", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
     let prod2 = (&e2 * a2).map_err(|e| format!("Detected: {}", e))?;
     let s2_pre = (k2 + prod2).map_err(|e| format!("Detected: {}", e))?;
@@ -195,10 +191,9 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
 
 // example of cross round object ineraction with error
 pub fn cross_round_interaction_example() -> Result<String, String> {
+    let mut t = TranscriptInspector::with_label(b"cross_round_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
-    let mut t = TranscriptInspector::new(b"cross_round_transcript", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
 
     let g = add_generator(&mut t, "gen", "prover2");
 
@@ -220,7 +215,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     t.add_commitment("R", R.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"])
+    let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1_msg = (e1 * &msg).map_err(|e| format!("Detected: {}", e))?;
@@ -228,7 +223,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     t.add_response("Z1", z1.value, &["e1"])
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let e2 = t.record_challenge::<Sha3_256>("e2", &["A", "R", "msg", "gen", "Z1"])
+    let e2 = t.record_challenge::<Sha3_256>("e2", &["A", "R", "msg", "gen", "Z1"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2_msg = (e2 * msg).map_err(|e| format!("Detected: {}", e))?;
@@ -244,10 +239,9 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 
 // example of interaction with not constants
 pub fn non_constant_interaction_example() -> Result<String, String> {
+    let mut t = TranscriptInspector::with_label(b"non_const_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
-    let mut t = TranscriptInspector::new(b"non_const_transcript", n.clone())
-        .map_err(|e| format!("Detected: {}", e))?;
 
     let g = add_generator(&mut t, "gen", "prover1");
 
@@ -276,7 +270,7 @@ pub fn non_constant_interaction_example() -> Result<String, String> {
     t.add_message_for("message", "prover2", msg.value)
         .map_err(|e| format!("Detected: {}", e))?;
 
-    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"])
+    t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string())

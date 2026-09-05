@@ -5,11 +5,12 @@ use sha3::Sha3_256;
 use num_bigint::{BigInt, RandBigInt};
 use num_traits::One;
 use k256::ProjectivePoint;
-use crate::poc::{
+use crate::transcript::{
     secp256k1_order, TaggedValue,
     TranscriptInspector, Value,
 };
 
+const SCHNORR_PROTOCOL_LABEL: &[u8] = b"fs-vuln-detection/schnorr/v1/secp256k1";
 
 
 // get random scalar
@@ -26,7 +27,7 @@ fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> Tagg
 
 // example of safe transcript
 pub fn safe_transcript_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new(b"safe_transcript");
+    let mut t = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -70,7 +71,7 @@ pub fn safe_transcript_example() -> Result<String, String> {
 
 // example of transcript with TranscriptError
 pub fn transcript_error_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new(b"transcript_with_order_error");
+    let mut t = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -124,7 +125,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
-    let mut t1 = TranscriptInspector::new(b"cross_transcript_1");
+    let mut t1 = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let g1 = add_generator(&mut t1, "gen", "prover");
     let n1 = t1.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -156,7 +157,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let s1 = t1.add_message("s1", s1_red.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut t2 = TranscriptInspector::new(b"cross_transcript_error_2");
+    let mut t2 = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let g2 = add_generator(&mut t2, "gen", "prover");
     let n2 = t2.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -195,7 +196,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
 
 // example of cross round object ineraction with error
 pub fn cross_round_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new(b"cross_round_transcript");
+    let mut t = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -243,7 +244,7 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 
 // example of interaction with not constants
 pub fn non_constant_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::new(b"non_const_transcript");
+    let mut t = TranscriptInspector::new(SCHNORR_PROTOCOL_LABEL);
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 

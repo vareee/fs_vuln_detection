@@ -6,10 +6,12 @@ use sha3::Sha3_256;
 use num_bigint::{BigInt, RandBigInt};
 use num_traits::{One, ToPrimitive, Zero};
 use num_integer::Integer;
-use crate::poc::{
+use crate::transcript::{
     mod_inverse, TranscriptInspector, Value,
 };
 
+const BULLETPROOF_PROTOCOL_LABEL: &[u8] =
+    b"fs-vuln-detection/bulletproof/v1/toy-modp";
 
 fn p_modulus() -> BigInt {
     (BigInt::one() << 255) - BigInt::from(19)
@@ -92,7 +94,7 @@ fn delta(y: &BigInt, z: &BigInt, m: i64, n: i64) -> BigInt {
 }
 
 pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<String, Value>, String> {
-    let mut t = TranscriptInspector::new(b"forged_transcript");
+    let mut t = TranscriptInspector::new(BULLETPROOF_PROTOCOL_LABEL);
     let mut rng = rand::thread_rng();
     let p = p_modulus();
     let q = q_order();

@@ -21,6 +21,7 @@ pub enum TranscriptError {
     DuplicateElementsInChallenge,
     EmptyElementLabel,
     DuplicateElementLabel(String),
+    InvalidOrder,
     DifferentTranscripts,
     TypeError(String),
     UnsafeCrossRoundInteraction(String, String),
@@ -43,6 +44,7 @@ impl fmt::Display for TranscriptError {
             TranscriptError::DuplicateElementsInChallenge => write!(f, "Challenge has duplicate objects to hash!"),
             TranscriptError::EmptyElementLabel => write!(f, "Transcript element label cannot be empty!"),
             TranscriptError::DuplicateElementLabel(label) => write!(f, "Transcript element label '{}' is already registered!", label),
+            TranscriptError::InvalidOrder => write!(f, "Order must be greater than one!"),
             TranscriptError::TypeError(msg) => write!(f, "{}", msg),
             TranscriptError::DifferentTranscripts => write!(f, "Objects from different transcripts cannot interact!"),
             TranscriptError::UnsafeCrossRoundInteraction(o1, o2) => write!(f, "Objects '{}' and '{}' from different rounds interact!", o1, o2),
@@ -361,6 +363,7 @@ struct TranscriptElement {
 
 pub struct TranscriptInspector {
     transcript_id: Uuid,
+    order: BigInt,
     elements: HashMap<String, TranscriptElement>,
     challenges: HashMap<String, HashSet<String>>,
     index: usize,
@@ -398,16 +401,23 @@ fn serialize_value_into(buf: &mut Vec<u8>, v: &Value) {
 }
 
 impl TranscriptInspector {
-    pub fn new() -> Self { 
-        Self::with_label(b"") 
-    }
+    pub fn new(
+        protocol_label: &[u8],
+        order: BigInt
+    ) -> Result<Self, TranscriptError> {
+        if order <= BigInt::one() {
+            return Err(TranscriptError::InvalidOrder);
+        }
 
-    pub fn with_label(protocol_label: &[u8]) -> Self {
         let mut transcript = Vec::new();
         transcript.extend_from_slice(&(protocol_label.len() as u32).to_be_bytes());
         transcript.extend_from_slice(protocol_label);
-        Self {
+        let (_, order_bytes) = order.to_bytes_be();
+        transcript.extend_from_slice(&(order_bytes.len() as u32).to_be_bytes());
+        transcript.extend_from_slice(&order_bytes);
+        Ok(Self {
             transcript_id: Uuid::new_v4(),
+            order,
             elements: HashMap::new(),
             challenges: HashMap::new(),
             index: 0,
@@ -415,7 +425,7 @@ impl TranscriptInspector {
             challenges_mul: HashMap::new(),
             constant_num: 0,
             transcript,
-        }
+        })
     }
 
     pub fn get_transcript_id(&self) -> Uuid { 
@@ -555,17 +565,11 @@ impl TranscriptInspector {
     fn validate_challenge_batch(
         &self,
         challenge_names: &[&str],
-        used_names: &[&str],
-        curve_order: &BigInt
+        used_names: &[&str]
     ) -> Result<HashSet<String>, TranscriptError> {
         if challenge_names.is_empty() {
             return Err(TranscriptError::TypeError(
                 "At least one challenge name is required".to_string(),
-            ));
-        }
-        if !curve_order.is_positive() {
-            return Err(TranscriptError::TypeError(
-                "Curve order must be positive".to_string(),
             ));
         }
         let distinct_challenge_names: HashSet<&str> =
@@ -633,13 +637,11 @@ impl TranscriptInspector {
     pub fn record_challenges<H: FSHash>(
         &mut self,
         challenge_names: &[&str],
-        used_names: &[&str],
-        curve_order: &BigInt
+        used_names: &[&str]
     ) -> Result<Vec<TaggedValue>, TranscriptError> {
         let used_set = self.validate_challenge_batch(
             challenge_names,
-            used_names,
-            curve_order,
+            used_names
         )?;
         let mut tagged_challenges = Vec::with_capacity(challenge_names.len());
         for challenge_name in challenge_names {
@@ -648,7 +650,7 @@ impl TranscriptInspector {
             buf.extend_from_slice(challenge_name.as_bytes());
             let digest = H::hash(&buf);
             let val = BigInt::from_bytes_be(num_bigint::Sign::Plus, &digest)
-                .mod_floor(curve_order);
+                .mod_floor(&self.order);
             let tagged = self.add(
                 challenge_name, "verifier",
                 ObjectCategory::Challenge, Value::Integer(val),
@@ -661,8 +663,8 @@ impl TranscriptInspector {
     }
 
     // create one challenge and finish the current logical round
-    pub fn record_challenge<H: FSHash>(&mut self, challenge_name: &str, used_names: &[&str], curve_order: &BigInt) -> Result<TaggedValue, TranscriptError> {
-        self.record_challenges::<H>(&[challenge_name], used_names, curve_order)?
+    pub fn record_challenge<H: FSHash>(&mut self, challenge_name: &str, used_names: &[&str]) -> Result<TaggedValue, TranscriptError> {
+        self.record_challenges::<H>(&[challenge_name], used_names)?
             .into_iter()
             .next()
             .ok_or_else(|| TranscriptError::TypeError(
@@ -777,8 +779,6 @@ impl TranscriptInspector {
 
 }
 
-impl Default for TranscriptInspector { fn default() -> Self { Self::new() } }
-
 // allow using arbitrary hash-function compatible to Digest
 pub trait FSHash {
     fn hash(input: &[u8]) -> Vec<u8>;
@@ -797,6 +797,10 @@ impl<D: Digest> FSHash for D {
 mod tests {
     use super::*;
 
+    fn test_transcript(label: &[u8]) -> TranscriptInspector {
+        TranscriptInspector::new(label, BigInt::from(97)).unwrap()
+    }
+
     #[test]
     fn test_scalar_mul_real_curve() {
         let g = ProjectivePoint::GENERATOR;
@@ -808,7 +812,7 @@ mod tests {
 
     #[test]
     fn test_tagged_arithmetic_points() {
-        let insp = TranscriptInspector::new();
+        let insp = test_transcript(b"tagged-arithmetic");
         let id = insp.get_transcript_id();
         let g = TaggedValue::new(Value::Point(ProjectivePoint::GENERATOR), id);
         let s = TaggedValue::new(Value::Integer(BigInt::from(3)), id);
@@ -819,8 +823,8 @@ mod tests {
 
     #[test]
     fn test_cross_transcript_error() {
-        let a = TranscriptInspector::new();
-        let b = TranscriptInspector::new();
+        let a = test_transcript(b"transcript-a");
+        let b = test_transcript(b"transcript-b");
         let v1 = TaggedValue::new(Value::Integer(BigInt::from(1)), a.get_transcript_id());
         let v2 = TaggedValue::new(Value::Integer(BigInt::from(2)), b
         .get_transcript_id());
@@ -829,7 +833,7 @@ mod tests {
 
     #[test]
     fn test_specialized_add_methods() {
-        let mut transcript = TranscriptInspector::with_label(b"specialized-add-methods");
+        let mut transcript = test_transcript(b"specialized-add-methods");
 
         transcript.add_generator("g", Value::int(2)).unwrap();
         transcript.add_public_key("pk", Value::int(3)).unwrap();
@@ -849,7 +853,7 @@ mod tests {
 
     #[test]
     fn repeated_element_label_is_rejected_without_mutation() {
-        let mut transcript = TranscriptInspector::with_label(b"repeated-label");
+        let mut transcript = test_transcript(b"repeated-label");
         transcript.add_commitment("element", Value::int(2)).unwrap();
         let transcript_before = transcript.transcript_bytes().to_vec();
         let elements_before = transcript.elements.len();
@@ -866,7 +870,7 @@ mod tests {
 
     #[test]
     fn empty_element_label_is_rejected_without_mutation() {
-        let mut transcript = TranscriptInspector::with_label(b"empty-label");
+        let mut transcript = test_transcript(b"empty-label");
         let transcript_before = transcript.transcript_bytes().to_vec();
 
         let result = transcript.add_message("", Value::int(3));
@@ -880,10 +884,10 @@ mod tests {
     fn cross_round_interaction_is_safe_after_challenge_multiplication() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"cross-round-safe");
+        let mut transcript = test_transcript(b"cross-round-safe");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
         transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
         transcript.record_challenge_multiplication("z", "e").unwrap();
 
@@ -894,10 +898,10 @@ mod tests {
     fn cross_round_interaction_without_challenge_multiplication_is_rejected() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"cross-round-unsafe");
+        let mut transcript = test_transcript(b"cross-round-unsafe");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
         transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
 
         assert!(matches!(
@@ -908,7 +912,7 @@ mod tests {
 
     #[test]
     fn challenge_multiplication_rejects_non_challenge_elements() {
-        let mut transcript = TranscriptInspector::with_label(b"cross-round-invalid-challenge");
+        let mut transcript = test_transcript(b"cross-round-invalid-challenge");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("z", "prover", ObjectCategory::Response, Value::int(5)).unwrap();
 
@@ -920,7 +924,7 @@ mod tests {
 
     #[test]
     fn owned_tagged_values_support_natural_rust_operators() {
-        let transcript = TranscriptInspector::new();
+        let transcript = test_transcript(b"owned-operators");
         let e = transcript.tag(Value::int(7));
         let message = transcript.tag(Value::int(3));
         let public_key = transcript.tag(Value::int(29));
@@ -935,10 +939,10 @@ mod tests {
     fn add_response_registers_challenge_multiplication_atomically() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"response-api");
+        let mut transcript = test_transcript(b"response-api");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
         transcript.add_response("z", Value::int(5), &["e"]).unwrap();
 
         assert!(transcript.check_cross_round_interaction("z", "g").is_ok());
@@ -946,7 +950,7 @@ mod tests {
 
     #[test]
     fn add_response_does_not_mutate_transcript_when_challenge_is_invalid() {
-        let mut transcript = TranscriptInspector::with_label(b"response-api-invalid");
+        let mut transcript = test_transcript(b"response-api-invalid");
         let before = transcript.transcript_bytes().to_vec();
 
         assert!(transcript.add_response("z", Value::int(5), &["missing"]).is_err());
@@ -956,7 +960,7 @@ mod tests {
 
     #[test]
     fn add_response_rejects_name_of_an_existing_non_response() {
-        let mut transcript = TranscriptInspector::with_label(b"response-name-collision");
+        let mut transcript = test_transcript(b"response-name-collision");
         transcript.add("z", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         let before = transcript.transcript_bytes().to_vec();
 
@@ -969,7 +973,7 @@ mod tests {
 
     #[test]
     fn add_response_rejects_repeated_response_name() {
-        let mut transcript = TranscriptInspector::with_label(b"repeated-response-name");
+        let mut transcript = test_transcript(b"repeated-response-name");
         transcript.add_response("z", Value::int(5), &[]).unwrap();
         let before = transcript.transcript_bytes().to_vec();
 
@@ -985,12 +989,12 @@ mod tests {
     fn several_challenges_can_belong_to_one_round() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"same-round-challenges");
+        let mut transcript = test_transcript(b"same-round-challenges");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
 
         let challenges = transcript
-            .record_challenges::<Sha3_256>(&["y", "z"], &["g", "m"], &BigInt::from(97))
+            .record_challenges::<Sha3_256>(&["y", "z"], &["g", "m"])
             .unwrap();
 
         assert_eq!(challenges.len(), 2);
@@ -1006,15 +1010,15 @@ mod tests {
     fn test_multi_round_interaction() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"non-adjacent-rounds");
+        let mut transcript = test_transcript(b"non-adjacent-rounds");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
         transcript
-            .record_challenges::<Sha3_256>(&["y", "z"], &["g", "m"], &BigInt::from(97))
+            .record_challenges::<Sha3_256>(&["y", "z"], &["g", "m"])
             .unwrap();
         transcript.add_response("r1", Value::int(5), &["y", "z"]).unwrap();
         transcript
-            .record_challenge::<Sha3_256>("x", &["g", "m", "r1"], &BigInt::from(97))
+            .record_challenge::<Sha3_256>("x", &["g", "m", "r1"])
             .unwrap();
         transcript.add_response("r2", Value::int(7), &["x"]).unwrap();
 
@@ -1033,7 +1037,7 @@ mod tests {
         use sha3::Sha3_256;
 
         const ROUND_COUNT: usize = 32;
-        let mut transcript = TranscriptInspector::with_label(b"arbitrary-round-count");
+        let mut transcript = test_transcript(b"arbitrary-round-count");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
         let mut prover_elements = vec!["g".to_string(), "m".to_string()];
@@ -1045,8 +1049,7 @@ mod tests {
             transcript
                 .record_challenge::<Sha3_256>(
                     &challenge_name,
-                    &used_names,
-                    &BigInt::from(97),
+                    &used_names
                 )
                 .unwrap();
             transcript
@@ -1087,10 +1090,10 @@ mod tests {
     fn repeated_challenge_registration_is_idempotent() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"repeated-registration");
+        let mut transcript = test_transcript(b"repeated-registration");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
         transcript.add_response("z", Value::int(5), &["e"]).unwrap();
 
         transcript.record_challenge_multiplication("z", "e").unwrap();
@@ -1102,7 +1105,7 @@ mod tests {
 
     #[test]
     fn same_round_objects_do_not_require_challenge_registration() {
-        let mut transcript = TranscriptInspector::with_label(b"same-round-objects");
+        let mut transcript = test_transcript(b"same-round-objects");
         transcript.add("left", "prover", ObjectCategory::Constant, Value::int(2)).unwrap();
         transcript.add("right", "prover", ObjectCategory::Constant, Value::int(3)).unwrap();
 
@@ -1113,13 +1116,13 @@ mod tests {
     fn invalid_challenge_batch_does_not_mutate_transcript() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"invalid-challenge-batch");
+        let mut transcript = test_transcript(b"invalid-challenge-batch");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
         let before = transcript.transcript_bytes().to_vec();
 
         assert!(transcript
-            .record_challenges::<Sha3_256>(&["e", "e"], &["g", "m"], &BigInt::from(97))
+            .record_challenges::<Sha3_256>(&["e", "e"], &["g", "m"])
             .is_err());
         assert_eq!(transcript.transcript_bytes(), before);
         assert!(!transcript.elements.contains_key("e"));
@@ -1130,29 +1133,67 @@ mod tests {
     fn empty_challenge_batch_and_invalid_order_are_rejected() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"challenge-batch-boundaries");
+        let mut transcript = test_transcript(b"challenge-batch-boundaries");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
 
         assert!(matches!(
-            transcript.record_challenges::<Sha3_256>(&[], &["g", "m"], &BigInt::from(97)),
+            transcript.record_challenges::<Sha3_256>(&[], &["g", "m"]),
             Err(TranscriptError::TypeError(_))
         ));
         assert!(matches!(
-            transcript.record_challenges::<Sha3_256>(&["e"], &["g", "m"], &BigInt::from(0)),
-            Err(TranscriptError::TypeError(_))
+            TranscriptInspector::new(b"invalid-order", BigInt::from(1)),
+            Err(TranscriptError::InvalidOrder)
+        ));
+        assert!(matches!(
+            TranscriptInspector::new(b"invalid-order", BigInt::zero()),
+            Err(TranscriptError::InvalidOrder)
+        ));
+        assert!(matches!(
+            TranscriptInspector::new(b"invalid-order", BigInt::from(-1)),
+            Err(TranscriptError::InvalidOrder)
         ));
         assert_eq!(transcript.round, 0);
+    }
+
+    #[test]
+    fn configured_order_is_used_by_every_challenge() {
+        use sha3::Sha3_256;
+
+        let order = BigInt::from(13);
+        let mut transcript = TranscriptInspector::new(
+            b"configured-order",
+            order.clone()
+        ).unwrap();
+        transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
+        transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
+
+        let first = transcript.record_challenge::<Sha3_256>("e1", &["g", "m"]).unwrap();
+        let second = transcript.record_challenge::<Sha3_256>("e2", &["g", "m"]).unwrap();
+
+        for challenge in [first, second] {
+            let value = challenge.as_bigint().unwrap();
+            assert!(!value.is_negative());
+            assert!(value < &order);
+        }
+    }
+
+    #[test]
+    fn order_is_bound_to_initial_transcript_state() {
+        let first = TranscriptInspector::new(b"same-protocol", BigInt::from(13)).unwrap();
+        let second = TranscriptInspector::new(b"same-protocol", BigInt::from(17)).unwrap();
+
+        assert_ne!(first.transcript_bytes(), second.transcript_bytes());
     }
 
     #[test]
     fn challenge_cannot_be_registered_for_an_element_from_an_earlier_round() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"future-challenge");
+        let mut transcript = test_transcript(b"future-challenge");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
 
         assert!(matches!(
             transcript.record_challenge_multiplication("m", "e"),
@@ -1165,10 +1206,10 @@ mod tests {
     fn challenge_registration_rejects_unknown_target() {
         use sha3::Sha3_256;
 
-        let mut transcript = TranscriptInspector::with_label(b"unknown-target");
+        let mut transcript = test_transcript(b"unknown-target");
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
-        transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
+        transcript.record_challenge::<Sha3_256>("e", &["g", "m"]).unwrap();
 
         assert!(matches!(
             transcript.record_challenge_multiplication("missing", "e"),

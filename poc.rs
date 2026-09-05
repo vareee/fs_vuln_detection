@@ -103,6 +103,24 @@ impl Value {
     pub fn point(p: ProjectivePoint) -> Self { Value::Point(p) }
 }
 
+impl From<BigInt> for Value {
+    fn from(value: BigInt) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl From<ProjectivePoint> for Value {
+    fn from(value: ProjectivePoint) -> Self {
+        Self::Point(value)
+    }
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(value: Vec<Value>) -> Self {
+        Self::List(value)
+    }
+}
+
 
 pub fn secp256k1_order() -> BigInt {
     BigInt::parse_bytes(b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16).unwrap()
@@ -127,7 +145,7 @@ pub fn bigint_to_scalar(n: &BigInt) -> Scalar {
         .expect("Valid scalar bytes after reduction")
 }
 
-pub fn point_xy_bytes(p: &ProjectivePoint) -> Option<([u8; 32], [u8; 32])> {
+pub fn serialize_point(p: &ProjectivePoint) -> Option<([u8; 32], [u8; 32])> {
     let aff: AffinePoint = p.to_affine();
     let enc = aff.to_encoded_point(false);
     if enc.is_identity() { return None; }
@@ -148,43 +166,31 @@ pub fn bigint_to_be32(v: &BigInt) -> [u8; 32] {
     out
 }
 
-pub fn serialize_tagged(tv: &TaggedValue) -> Vec<u8> {
-    match &tv.value {
-        Value::Point(p) => match point_xy_bytes(p) {
-            Some((x, y)) => {
-                let mut out = Vec::with_capacity(64);
-                out.extend_from_slice(&x);
-                out.extend_from_slice(&y);
-                out
-            }
-            None => vec![0u8; 64],
-        },
-        Value::Integer(b) => {
-            let bytes = bigint_to_be32(b);
-            let mut out = Vec::with_capacity(64);
-            out.extend_from_slice(&bytes);
-            out.extend_from_slice(&bytes);
-            out
-        }
-        _ => Vec::new(),
-    }
-}
-
 /// arithmetic checks that both operands have the same `transcript_id` and returns a new `TaggedValue`
 #[derive(Debug, Clone)]
 pub struct TaggedValue {
     /// algebraic value owned by this wrapper
-    pub value: Value,
+    pub(crate) value: Value,
     /// id of the only transcript in which this value may participate
-    pub transcript_id: Uuid,
+    pub(crate) transcript_id: Uuid,
 }
 
 impl TaggedValue {
-    pub fn new(value: Value, transcript_id: Uuid) -> Self { 
+    pub(crate) fn new(value: Value, transcript_id: Uuid) -> Self {
         Self { 
             value, 
             transcript_id 
         } 
+    }
+
+    /// return the wrapped value
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+
+    /// consume the wrapper and return its value
+    pub fn into_value(self) -> Value {
+        self.value
     }
 
     fn ensure_same_transcript_id(&self, other: &TaggedValue) -> Result<(), TranscriptError> {
@@ -246,16 +252,24 @@ impl TaggedValue {
         } else { None }
     }
 
-    pub fn as_list(&self) -> Option<&Vec<Value>> {
+    pub fn as_list(&self) -> Option<&[Value]> {
         if let Value::List(v) = &self.value { 
             Some(v) 
         } else { None }
     }
 
-    pub fn index(&self, i: usize) -> TaggedValue {
+    pub fn get(&self, index: usize) -> Result<TaggedValue, TranscriptError> {
         match &self.value {
-            Value::List(v) => TaggedValue::new(v[i].clone(), self.transcript_id),
-            _ => panic!("TaggedValue is not indexable!"),
+            Value::List(values) => values
+                .get(index)
+                .cloned()
+                .map(|value| TaggedValue::new(value, self.transcript_id))
+                .ok_or_else(|| TranscriptError::TypeError(
+                    format!("List index {} is out of bounds", index)
+                )),
+            _ => Err(TranscriptError::TypeError(
+                "TaggedValue is not a list".to_string()
+            ))
         }
     }
 
@@ -379,7 +393,7 @@ fn serialize_value_into(buf: &mut Vec<u8>, v: &Value) {
         }
         Value::Point(p) => {
             buf.push(0x02);
-            match point_xy_bytes(p) {
+            match serialize_point(p) {
                 Some((x, y)) => {
                     buf.extend_from_slice(&x);
                     buf.extend_from_slice(&y);
@@ -398,11 +412,8 @@ fn serialize_value_into(buf: &mut Vec<u8>, v: &Value) {
 }
 
 impl TranscriptInspector {
-    pub fn new() -> Self {
-        Self::with_label(b"")
-    }
-
-    pub fn with_label(protocol_label: &[u8]) -> Self {
+    /// create a transcript with a protocol label that may be empty
+    pub fn new(protocol_label: &[u8]) -> Self {
         let mut transcript = Vec::new();
         transcript.extend_from_slice(&(protocol_label.len() as u32).to_be_bytes());
         transcript.extend_from_slice(protocol_label);
@@ -418,7 +429,8 @@ impl TranscriptInspector {
         }
     }
 
-    pub fn get_transcript_id(&self) -> Uuid { 
+    #[cfg(test)]
+    fn get_transcript_id(&self) -> Uuid {
         self.transcript_id 
     }
 
@@ -431,7 +443,7 @@ impl TranscriptInspector {
     }
 
     // add object to transcript (who did it, its category (pubkey, challenge, ...), its number in transcript and round number)
-    pub fn add(
+    fn add(
         &mut self,
         name: &str,
         subject: &str,
@@ -470,86 +482,86 @@ impl TranscriptInspector {
     }
 
     /// add a verifier-provided generator
-    pub fn add_generator(
+    pub fn add_generator<V: Into<Value>>(
         &mut self,
         label: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
         self.add_generator_for(label, "verifier", value)
     }
 
     /// add a generator associated with an explicitly named participant
-    pub fn add_generator_for(
+    pub fn add_generator_for<V: Into<Value>>(
         &mut self,
         label: &str,
         subject: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(label, subject, ObjectCategory::Generator, value)
+        self.add(label, subject, ObjectCategory::Generator, value.into())
     }
 
     /// add a public key owned by the default prover
-    pub fn add_public_key(
+    pub fn add_public_key<V: Into<Value>>(
         &mut self,
         label: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
         self.add_public_key_for(label, "prover", value)
     }
 
     /// add a public key owned by an explicitly named participant
-    pub fn add_public_key_for(
+    pub fn add_public_key_for<V: Into<Value>>(
         &mut self,
         label: &str,
         subject: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(label, subject, ObjectCategory::Pubkey, value)
+        self.add(label, subject, ObjectCategory::Pubkey, value.into())
     }
 
     /// add a commitment owned by the default prover
-    pub fn add_commitment(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+    pub fn add_commitment<V: Into<Value>>(&mut self, label: &str, value: V) -> Result<TaggedValue, TranscriptError> {
         self.add_commitment_for(label, "prover", value)
     }
 
     /// add a commitment owned by an explicitly named participant
-    pub fn add_commitment_for(
+    pub fn add_commitment_for<V: Into<Value>>(
         &mut self,
         label: &str,
         subject: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(label, subject, ObjectCategory::Commitment, value)
+        self.add(label, subject, ObjectCategory::Commitment, value.into())
     }
 
     /// add a message owned by the default prover
-    pub fn add_message(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+    pub fn add_message<V: Into<Value>>(&mut self, label: &str, value: V) -> Result<TaggedValue, TranscriptError> {
         self.add_message_for(label, "prover", value)
     }
 
     /// add a message owned by an explicitly named participant
-    pub fn add_message_for(
+    pub fn add_message_for<V: Into<Value>>(
         &mut self,
         label: &str,
         subject: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(label, subject, ObjectCategory::Message, value)
+        self.add(label, subject, ObjectCategory::Message, value.into())
     }
 
     /// add a constant owned by the default prover
-    pub fn add_constant(&mut self, label: &str, value: Value) -> Result<TaggedValue, TranscriptError> {
+    pub fn add_constant<V: Into<Value>>(&mut self, label: &str, value: V) -> Result<TaggedValue, TranscriptError> {
         self.add_constant_for(label, "prover", value)
     }
 
     /// add a constant owned by an explicitly named participant
-    pub fn add_constant_for(
+    pub fn add_constant_for<V: Into<Value>>(
         &mut self,
         label: &str,
         subject: &str,
-        value: Value
+        value: V
     ) -> Result<TaggedValue, TranscriptError> {
-        self.add(label, subject, ObjectCategory::Constant, value)
+        self.add(label, subject, ObjectCategory::Constant, value.into())
     }
 
     fn validate_challenge_batch(
@@ -629,7 +641,11 @@ impl TranscriptInspector {
         Ok(used_set)
     }
 
-    /// create several Fiat-Shamir challenges in one logical protocol round
+    /// create several scalar Fiat-Shamir challenges in one logical protocol round
+    ///
+    /// every hash output is reduced modulo the supplied `order`
+    ///
+    /// the `order` applies only to this call, is shared by the batch and is not stored in the transcript
     pub fn record_challenges<H: FSHash>(
         &mut self,
         challenge_names: &[&str],
@@ -660,7 +676,9 @@ impl TranscriptInspector {
         Ok(tagged_challenges)
     }
 
-    // create one challenge and finish the current logical round
+    /// create one scalar challenge and finish the current logical round
+    ///
+    /// the hash output is reduced modulo `order` for this challenge only
     pub fn record_challenge<H: FSHash>(&mut self, challenge_name: &str, used_names: &[&str], order: &BigInt) -> Result<TaggedValue, TranscriptError> {
         self.record_challenges::<H>(&[challenge_name], used_names, order)?
             .into_iter()
@@ -707,14 +725,16 @@ impl TranscriptInspector {
         Ok(())
     }
 
-    /// add a prover response and atomically register the challenges used to
-    /// construct it; validation happens before the transcript is changed
+    /// add a prover response and atomically register its challenge dependencies
     pub fn add_response(
         &mut self,
         name: &str,
-        value: Value,
+        response: TaggedValue,
         challenge_names: &[&str]
     ) -> Result<TaggedValue, TranscriptError> {
+        if response.transcript_id != self.transcript_id {
+            return Err(TranscriptError::DifferentTranscripts);
+        }
         if self.elements.contains_key(name) {
             return Err(TranscriptError::TypeError(format!(
                 "Transcript element '{}' already exists",
@@ -742,7 +762,7 @@ impl TranscriptInspector {
             }
         }
 
-        let tagged = self.add(name, "prover", ObjectCategory::Response, value)?;
+        let tagged = self.add(name, "prover", ObjectCategory::Response, response.value)?;
         let multiplications = self
             .challenges_mul
             .get_mut(name)
@@ -763,10 +783,10 @@ impl TranscriptInspector {
         let mul_1 = self.challenges_mul.get(object1).cloned().unwrap_or_default(); // list of challenges object1 was multiplied by
         let mul_2 = self.challenges_mul.get(object2).cloned().unwrap_or_default(); // list of challenges object2 was multiplied by
         let other_round_challenges_1: HashSet<String> = self.challenges.iter()
-            .filter(|(name, _)| self.elements.get(*name).map_or(false, |e| e.round == info2.round))
+            .filter(|(name, _)| self.elements.get(*name).is_some_and(|e| e.round == info2.round))
             .map(|(n, _)| n.clone()).collect(); // list of challenges in round of object2
         let other_round_challenges_2: HashSet<String> = self.challenges.iter()
-            .filter(|(name, _)| self.elements.get(*name).map_or(false, |e| e.round == info1.round))
+            .filter(|(name, _)| self.elements.get(*name).is_some_and(|e| e.round == info1.round))
             .map(|(n, _)| n.clone()).collect(); // list of challenges in round of object1
         let safe_1 = !mul_1.is_disjoint(&other_round_challenges_1); // check if object1 was multiplied by any challenge in round of object2
         let safe_2 = !mul_2.is_disjoint(&other_round_challenges_2); // check if object2 was multiplied by any challenge in round of object1
@@ -775,12 +795,6 @@ impl TranscriptInspector {
         } else { Ok(()) }
     }
 
-}
-
-impl Default for TranscriptInspector {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 // allow using arbitrary hash-function compatible to Digest
@@ -802,7 +816,17 @@ mod tests {
     use super::*;
 
     fn test_transcript(label: &[u8]) -> TranscriptInspector {
-        TranscriptInspector::with_label(label)
+        TranscriptInspector::new(label)
+    }
+
+    fn expected_challenge<H: FSHash>(
+        transcript: &TranscriptInspector,
+        challenge_name: &str,
+        order: &BigInt
+    ) -> BigInt {
+        let mut input = transcript.transcript_bytes().to_vec();
+        input.extend_from_slice(challenge_name.as_bytes());
+        BigInt::from_bytes_be(num_bigint::Sign::Plus, &H::hash(&input)).mod_floor(order)
     }
 
     #[test]
@@ -823,6 +847,17 @@ mod tests {
         let prod = (&s * &g).unwrap();
         let prod2 = (&g * &s).unwrap();
         assert_eq!(prod.value, prod2.value);
+    }
+
+    #[test]
+    fn tagged_list_access_is_checked() {
+        let transcript = test_transcript(b"tagged-list-access");
+        let list = transcript.tag(Value::List(vec![Value::int(3)]));
+        let integer = transcript.tag(Value::int(3));
+
+        assert_eq!(list.get(0).unwrap().as_bigint(), Some(&BigInt::from(3)));
+        assert!(list.get(1).is_err());
+        assert!(integer.get(0).is_err());
     }
 
     #[test]
@@ -947,7 +982,8 @@ mod tests {
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
         transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
-        transcript.add_response("z", Value::int(5), &["e"]).unwrap();
+        let response = transcript.tag(Value::int(5));
+        transcript.add_response("z", response, &["e"]).unwrap();
 
         assert!(transcript.check_cross_round_interaction("z", "g").is_ok());
     }
@@ -957,7 +993,8 @@ mod tests {
         let mut transcript = test_transcript(b"response-api-invalid");
         let before = transcript.transcript_bytes().to_vec();
 
-        assert!(transcript.add_response("z", Value::int(5), &["missing"]).is_err());
+        let response = transcript.tag(Value::int(5));
+        assert!(transcript.add_response("z", response, &["missing"]).is_err());
         assert_eq!(transcript.transcript_bytes(), before);
         assert!(!transcript.elements.contains_key("z"));
     }
@@ -968,8 +1005,9 @@ mod tests {
         transcript.add("z", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         let before = transcript.transcript_bytes().to_vec();
 
+        let response = transcript.tag(Value::int(5));
         assert!(matches!(
-            transcript.add_response("z", Value::int(5), &[]),
+            transcript.add_response("z", response, &[]),
             Err(TranscriptError::TypeError(_))
         ));
         assert_eq!(transcript.transcript_bytes(), before);
@@ -978,11 +1016,13 @@ mod tests {
     #[test]
     fn add_response_rejects_repeated_response_name() {
         let mut transcript = test_transcript(b"repeated-response-name");
-        transcript.add_response("z", Value::int(5), &[]).unwrap();
+        let response = transcript.tag(Value::int(5));
+        transcript.add_response("z", response, &[]).unwrap();
         let before = transcript.transcript_bytes().to_vec();
 
+        let response = transcript.tag(Value::int(7));
         assert!(matches!(
-            transcript.add_response("z", Value::int(7), &[]),
+            transcript.add_response("z", response, &[]),
             Err(TranscriptError::TypeError(_))
         ));
         assert_eq!(transcript.transcript_bytes(), before);
@@ -1005,8 +1045,14 @@ mod tests {
         assert_eq!(transcript.elements["y"].round, 0);
         assert_eq!(transcript.elements["z"].round, 0);
         assert_eq!(transcript.round, 1);
+        for challenge in &challenges {
+            let value = challenge.as_bigint().unwrap();
+            assert!(value >= &BigInt::zero());
+            assert!(value < &BigInt::from(97));
+        }
 
-        transcript.add_response("response", Value::int(5), &["z"]).unwrap();
+        let response = transcript.tag(Value::int(5));
+        transcript.add_response("response", response, &["z"]).unwrap();
         assert!(transcript.check_cross_round_interaction("response", "g").is_ok());
     }
 
@@ -1020,11 +1066,13 @@ mod tests {
         transcript
             .record_challenges::<Sha3_256>(&["y", "z"], &["g", "m"], &BigInt::from(97))
             .unwrap();
-        transcript.add_response("r1", Value::int(5), &["y", "z"]).unwrap();
+        let r1 = transcript.tag(Value::int(5));
+        transcript.add_response("r1", r1, &["y", "z"]).unwrap();
         transcript
             .record_challenge::<Sha3_256>("x", &["g", "m", "r1"], &BigInt::from(97))
             .unwrap();
-        transcript.add_response("r2", Value::int(7), &["x"]).unwrap();
+        let r2 = transcript.tag(Value::int(7));
+        transcript.add_response("r2", r2, &["x"]).unwrap();
 
         assert!(transcript.check_cross_round_interaction("r2", "r1").is_ok());
         assert!(matches!(
@@ -1057,11 +1105,12 @@ mod tests {
                     &BigInt::from(97)
                 )
                 .unwrap();
+            let response = transcript.tag(Value::int(round + 5));
             transcript
                 .add_response(
                     &response_name,
-                    Value::int(round + 5),
-                    &[challenge_name.as_str()],
+                    response,
+                    &[challenge_name.as_str()]
                 )
                 .unwrap();
 
@@ -1099,7 +1148,8 @@ mod tests {
         transcript.add("g", "verifier", ObjectCategory::Generator, Value::int(2)).unwrap();
         transcript.add("m", "verifier", ObjectCategory::Message, Value::int(3)).unwrap();
         transcript.record_challenge::<Sha3_256>("e", &["g", "m"], &BigInt::from(97)).unwrap();
-        transcript.add_response("z", Value::int(5), &["e"]).unwrap();
+        let response = transcript.tag(Value::int(5));
+        transcript.add_response("z", response, &["e"]).unwrap();
 
         transcript.record_challenge_multiplication("z", "e").unwrap();
         transcript.record_challenge_multiplication("z", "e").unwrap();
@@ -1159,6 +1209,85 @@ mod tests {
             Err(TranscriptError::TypeError(_))
         ));
         assert_eq!(transcript.round, 0);
+    }
+
+    #[test]
+    fn challenges_can_use_different_orders_in_one_transcript() {
+        use sha3::Sha3_256;
+
+        let first_order = BigInt::from(13);
+        let second_order = BigInt::from(17);
+        let mut transcript = test_transcript(b"different-challenge-orders");
+        transcript.add_generator("g", Value::int(2)).unwrap();
+        transcript.add_message("m", Value::int(3)).unwrap();
+
+        let expected_first = expected_challenge::<Sha3_256>(
+            &transcript,
+            "e1",
+            &first_order
+        );
+        let first = transcript
+            .record_challenge::<Sha3_256>("e1", &["g", "m"], &first_order)
+            .unwrap();
+
+        let expected_second = expected_challenge::<Sha3_256>(
+            &transcript,
+            "e2",
+            &second_order
+        );
+        let second = transcript
+            .record_challenge::<Sha3_256>("e2", &["g", "m"], &second_order)
+            .unwrap();
+
+        assert_eq!(first.as_bigint(), Some(&expected_first));
+        assert_eq!(second.as_bigint(), Some(&expected_second));
+    }
+
+    #[test]
+    fn identical_transcripts_generate_identical_challenges() {
+        use sha3::Sha3_256;
+
+        let order = secp256k1_order();
+        let mut first = test_transcript(b"deterministic-challenge");
+        let mut second = test_transcript(b"deterministic-challenge");
+
+        for transcript in [&mut first, &mut second] {
+            transcript.add_generator("g", Value::int(2)).unwrap();
+            transcript.add_message("m", Value::int(3)).unwrap();
+        }
+
+        let first_challenge = first
+            .record_challenge::<Sha3_256>("e", &["g", "m"], &order)
+            .unwrap();
+        let second_challenge = second
+            .record_challenge::<Sha3_256>("e", &["g", "m"], &order)
+            .unwrap();
+
+        assert_eq!(first_challenge.as_bigint(), second_challenge.as_bigint());
+        assert_eq!(first.transcript_bytes(), second.transcript_bytes());
+    }
+
+    #[test]
+    fn challenge_labels_separate_challenge_values() {
+        use sha3::Sha3_256;
+
+        let order = secp256k1_order();
+        let mut first = test_transcript(b"challenge-labels");
+        let mut second = test_transcript(b"challenge-labels");
+
+        for transcript in [&mut first, &mut second] {
+            transcript.add_generator("g", Value::int(2)).unwrap();
+            transcript.add_message("m", Value::int(3)).unwrap();
+        }
+
+        let first_challenge = first
+            .record_challenge::<Sha3_256>("e1", &["g", "m"], &order)
+            .unwrap();
+        let second_challenge = second
+            .record_challenge::<Sha3_256>("e2", &["g", "m"], &order)
+            .unwrap();
+
+        assert_ne!(first_challenge.as_bigint(), second_challenge.as_bigint());
     }
 
     #[test]

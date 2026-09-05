@@ -26,7 +26,7 @@ fn add_generator(t: &mut TranscriptInspector, name: &str, subject: &str) -> Tagg
 
 // example of safe transcript
 pub fn safe_transcript_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::with_label(b"safe_transcript");
+    let mut t = TranscriptInspector::new(b"safe_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -34,32 +34,32 @@ pub fn safe_transcript_example() -> Result<String, String> {
 
     let a1 = t.add_constant_for("a1", "prover1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
-    t.add_public_key_for("A1", "prover1", A1.value)
+    let public_key_1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
+    t.add_public_key_for("A1", "prover1", public_key_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = t.add_constant_for("k1", "prover1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
-    t.add_commitment_for("R1", "prover1", R1.value)
+    let commitment_1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
+    t.add_commitment_for("R1", "prover1", commitment_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t.add_constant_for("a2", "prover2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
-    t.add_public_key_for("A2", "prover2", A2.value)
+    let public_key_2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
+    t.add_public_key_for("A2", "prover2", public_key_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = t.add_constant_for("k2", "prover2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R2 = (&g * k2).map_err(|e| format!("Detected: {}", e))?;
-    t.add_commitment_for("R2", "prover2", R2.value)
+    let commitment_2 = (&g * k2).map_err(|e| format!("Detected: {}", e))?;
+    t.add_commitment_for("R2", "prover2", commitment_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd = t.add_constant_for("msg_rnd", "prover2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    t.add_message_for("message", "prover2", msg.value)
+    t.add_message_for("message", "prover2", msg.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)
@@ -70,7 +70,7 @@ pub fn safe_transcript_example() -> Result<String, String> {
 
 // example of transcript with TranscriptError
 pub fn transcript_error_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::with_label(b"transcript_with_order_error");
+    let mut t = TranscriptInspector::new(b"transcript_with_order_error");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -79,19 +79,19 @@ pub fn transcript_error_example() -> Result<String, String> {
     let msg_rnd = t.add_constant_for("msg_rnd", "prover1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    t.add_message_for("msg", "prover1", msg.value)
+    t.add_message_for("msg", "prover1", msg.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a1 = t.add_constant_for("a1", "prover1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
-    t.add_public_key_for("A1", "prover1", A1.value)
+    let public_key_1 = (&g * a1).map_err(|e| format!("Detected: {}", e))?;
+    t.add_public_key_for("A1", "prover1", public_key_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = t.add_constant_for("k1", "prover1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
-    t.add_commitment_for("R1", "prover1", R1.value)
+    let commitment_1 = (&g * k1).map_err(|e| format!("Detected: {}", e))?;
+    t.add_commitment_for("R1", "prover1", commitment_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e1", &["A1", "R1", "msg", "gen"], &n)
@@ -99,8 +99,8 @@ pub fn transcript_error_example() -> Result<String, String> {
 
     let a2 = t.add_constant_for("a2", "prover2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
-    match t.add_public_key_for("A2", "prover2", A2.value) {
+    let public_key_2 = (&g * a2).map_err(|e| format!("Detected: {}", e))?;
+    match t.add_public_key_for("A2", "prover2", public_key_2.into_value()) {
         Ok(_)  => Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string()),
         Err(e) => Err(format!("Detected: {}", e)),
     }
@@ -109,18 +109,22 @@ pub fn transcript_error_example() -> Result<String, String> {
 // example of cross transcript interaction with error
 pub fn cross_transcript_interaction_example() -> Result<String, String> {
     fn bad_verify(
-        R: &TaggedValue, A: &TaggedValue, s: &TaggedValue, e: &TaggedValue, G: &TaggedValue
+        commitment: &TaggedValue,
+        public_key: &TaggedValue,
+        response: &TaggedValue,
+        challenge: &TaggedValue,
+        generator: &TaggedValue
     ) -> Result<bool, String> {
-        let lhs = (s * G).map_err(|err| err.to_string())?;
-        let ea  = (e * A).map_err(|err| err.to_string())?;
-        let rhs = (R + ea).map_err(|err| err.to_string())?;
-        Ok(lhs.value == rhs.value)
+        let lhs = (response * generator).map_err(|err| err.to_string())?;
+        let challenge_key = (challenge * public_key).map_err(|err| err.to_string())?;
+        let rhs = (commitment + challenge_key).map_err(|err| err.to_string())?;
+        Ok(lhs.value() == rhs.value())
     }
 
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
-    let mut t1 = TranscriptInspector::with_label(b"cross_transcript_1");
+    let mut t1 = TranscriptInspector::new(b"cross_transcript_1");
     let g1 = add_generator(&mut t1, "gen", "prover");
     let n1 = t1.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -128,19 +132,19 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let msg_rnd1 = t1.add_constant("msg_rnd1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
     let msg1 = (&g1 * msg_rnd1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add_message("msg", msg1.value)
+    t1.add_message("msg", msg1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a1 = t1.add_constant("a1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A1 = (&g1 * &a1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add_public_key("A1", A1.value)
+    let public_key_1 = (&g1 * &a1).map_err(|e| format!("Detected: {}", e))?;
+    t1.add_public_key("A1", public_key_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = t1.add_constant("k1", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R1 = (&g1 * &k1).map_err(|e| format!("Detected: {}", e))?;
-    t1.add_commitment("R1", R1.value)
+    let commitment_1 = (&g1 * &k1).map_err(|e| format!("Detected: {}", e))?;
+    t1.add_commitment("R1", commitment_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1 = t1.record_challenge::<Sha3_256>("e1", &["R1", "A1", "msg", "gen"], &n)
@@ -149,10 +153,10 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let prod = (&e1 * a1).map_err(|e| format!("Detected: {}", e))?;
     let s1_pre = (k1 + prod).map_err(|e| format!("Detected: {}", e))?;
     let s1_red = s1_pre.modulo(&n1).map_err(|e| format!("Detected: {}", e))?;
-    let s1 = t1.add_message("s1", s1_red.value)
+    let s1 = t1.add_message("s1", s1_red.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
-    let mut t2 = TranscriptInspector::with_label(b"cross_transcript_error_2");
+    let mut t2 = TranscriptInspector::new(b"cross_transcript_error_2");
     let g2 = add_generator(&mut t2, "gen", "prover");
     let n2 = t2.add_generator_for("n", "prover", Value::Integer(n.clone()))
         .map_err(|e| format!("Detected: {}", e))?;
@@ -160,19 +164,19 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let msg_rnd2 = t2.add_constant("msg_rnd2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
     let msg2 = (&g2 * msg_rnd2).map_err(|e| format!("Detected: {}", e))?;
-    t2.add_message("msg", msg2.value)
+    t2.add_message("msg", msg2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = t2.add_constant("a2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A2 = (&g2 * &a2).map_err(|e| format!("Detected: {}", e))?;
-    let A2 = t2.add_public_key("A2", A2.value)
+    let public_key_2 = (&g2 * &a2).map_err(|e| format!("Detected: {}", e))?;
+    let public_key_2 = t2.add_public_key("A2", public_key_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = t2.add_constant("k2", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R2 = (&g2 * &k2).map_err(|e| format!("Detected: {}", e))?;
-    let R2 = t2.add_commitment("R2", R2.value)
+    let commitment_2 = (&g2 * &k2).map_err(|e| format!("Detected: {}", e))?;
+    let commitment_2 = t2.add_commitment("R2", commitment_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2 = t2.record_challenge::<Sha3_256>("e2", &["R2", "A2", "msg", "gen"], &n)
@@ -180,10 +184,10 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
     let prod2 = (&e2 * a2).map_err(|e| format!("Detected: {}", e))?;
     let s2_pre = (k2 + prod2).map_err(|e| format!("Detected: {}", e))?;
     let s2_red = s2_pre.modulo(&n2).map_err(|e| format!("Detected: {}", e))?;
-    t2.add_message("s2", s2_red.value)
+    t2.add_message("s2", s2_red.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
-    match bad_verify(&R2, &A2, &s1, &e1, &g2) {
+    match bad_verify(&commitment_2, &public_key_2, &s1, &e1, &g2) {
         Ok(_)    => Ok("No Fiat-Shamir heuristic vulnerability detected.".to_string()),
         Err(err) => Err(format!("Detected: {}", err)),
     }
@@ -191,7 +195,7 @@ pub fn cross_transcript_interaction_example() -> Result<String, String> {
 
 // example of cross round object ineraction with error
 pub fn cross_round_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::with_label(b"cross_round_transcript");
+    let mut t = TranscriptInspector::new(b"cross_round_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
@@ -200,35 +204,35 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
     let msg_rnd = t.add_constant("msg_rnd", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
     let msg = (&g * msg_rnd).map_err(|e| format!("Detected: {}", e))?;
-    let msg = t.add_message("msg", msg.value)
+    let msg = t.add_message("msg", msg.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a = t.add_constant("a", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let A = (&g * a).map_err(|e| format!("Detected: {}", e))?;
-    let A = t.add_public_key("A", A.value)
+    let public_key = (&g * a).map_err(|e| format!("Detected: {}", e))?;
+    let public_key = t.add_public_key("A", public_key.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k = t.add_constant("k", Value::Integer(rand_scalar(&mut rng)))
         .map_err(|e| format!("Detected: {}", e))?;
-    let R = (&g * k).map_err(|e| format!("Detected: {}", e))?;
-    t.add_commitment("R", R.value)
+    let commitment = (&g * k).map_err(|e| format!("Detected: {}", e))?;
+    t.add_commitment("R", commitment.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1 = t.record_challenge::<Sha3_256>("e1", &["A", "R", "msg", "gen"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e1_msg = (e1 * &msg).map_err(|e| format!("Detected: {}", e))?;
-    let z1 = (&A - &e1_msg).map_err(|e| format!("Detected: {}", e))?;
-    t.add_response("Z1", z1.value, &["e1"])
+    let z1 = (&public_key - &e1_msg).map_err(|e| format!("Detected: {}", e))?;
+    t.add_response("Z1", z1, &["e1"])
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2 = t.record_challenge::<Sha3_256>("e2", &["A", "R", "msg", "gen", "Z1"], &n)
         .map_err(|e| format!("Detected: {}", e))?;
 
     let e2_msg = (e2 * msg).map_err(|e| format!("Detected: {}", e))?;
-    let z2 = (A - e2_msg).map_err(|e| format!("Detected: {}", e))?;
-    t.add_response("Z2", z2.value, &["e2"])
+    let z2 = (public_key - e2_msg).map_err(|e| format!("Detected: {}", e))?;
+    t.add_response("Z2", z2, &["e2"])
         .map_err(|e| format!("Detected: {}", e))?;
 
     match t.check_cross_round_interaction("Z2", "A") {
@@ -239,35 +243,35 @@ pub fn cross_round_interaction_example() -> Result<String, String> {
 
 // example of interaction with not constants
 pub fn non_constant_interaction_example() -> Result<String, String> {
-    let mut t = TranscriptInspector::with_label(b"non_const_transcript");
+    let mut t = TranscriptInspector::new(b"non_const_transcript");
     let mut rng = rand::thread_rng();
     let n = secp256k1_order();
 
     let g = add_generator(&mut t, "gen", "prover1");
 
     let a1 = rand_scalar(&mut rng);
-    let A1 = mul_point_scalar(&g, &a1)?;
-    t.add_public_key_for("A1", "prover1", A1.value)
+    let public_key_1 = mul_point_scalar(&g, &a1)?;
+    t.add_public_key_for("A1", "prover1", public_key_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k1 = rand_scalar(&mut rng);
-    let R1 = mul_point_scalar(&g, &k1)?;
-    t.add_commitment_for("R1", "prover1", R1.value)
+    let commitment_1 = mul_point_scalar(&g, &k1)?;
+    t.add_commitment_for("R1", "prover1", commitment_1.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let a2 = rand_scalar(&mut rng);
-    let A2 = mul_point_scalar(&g, &a2)?;
-    t.add_public_key_for("A2", "prover2", A2.value)
+    let public_key_2 = mul_point_scalar(&g, &a2)?;
+    t.add_public_key_for("A2", "prover2", public_key_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let k2 = rand_scalar(&mut rng);
-    let R2 = mul_point_scalar(&g, &k2)?;
-    t.add_commitment_for("R2", "prover2", R2.value)
+    let commitment_2 = mul_point_scalar(&g, &k2)?;
+    t.add_commitment_for("R2", "prover2", commitment_2.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     let msg_rnd = rand_scalar(&mut rng);
     let msg = mul_point_scalar(&g, &msg_rnd)?;
-    t.add_message_for("message", "prover2", msg.value)
+    t.add_message_for("message", "prover2", msg.into_value())
         .map_err(|e| format!("Detected: {}", e))?;
 
     t.record_challenge::<Sha3_256>("e", &["A1", "A2", "R1", "R2", "message", "gen"], &n)

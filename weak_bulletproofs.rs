@@ -92,7 +92,7 @@ fn delta(y: &BigInt, z: &BigInt, m: i64, n: i64) -> BigInt {
 }
 
 pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<String, Value>, String> {
-    let mut t = TranscriptInspector::with_label(b"forged_transcript");
+    let mut t = TranscriptInspector::new(b"forged_transcript");
     let mut rng = rand::thread_rng();
     let p = p_modulus();
     let q = q_order();
@@ -206,7 +206,7 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
     let y_pow = y_val.modpow(&BigInt::from((m * n) as u64), &q);
     let y_inv = mod_inverse(&y_pow, &q).ok_or("y has no inverse mod q")?;
     let h_prime: Vec<BigInt> = (0..mn).map(|i| gexp(&h_vec[i], &y_inv)).collect();
-    let u_prime = gexp(&u, &w_val);
+    let u_prime = gexp(&u, w_val);
 
     let neg_mu = (-&mu).mod_floor(&q);
     let mut p_prime = gexp(&h, &neg_mu);
@@ -217,9 +217,9 @@ pub fn forge_bulletproof(params: &HashMap<String, Value>) -> Result<HashMap<Stri
         p_prime = (&p_prime * gexp(gi, &neg_z)).mod_floor(&p);
     }
     let mut y_exp = BigInt::one();
-    for i in 0..mn {
+    for h in h_prime.iter().take(mn) {
         let exp = (z_val * &y_exp).mod_floor(&q);
-        p_prime = (&p_prime * gexp(&h_prime[i], &exp)).mod_floor(&p);
+        p_prime = (&p_prime * gexp(h, &exp)).mod_floor(&p);
         y_exp = (&y_exp * y_val).mod_floor(&q);
     }
     for j in 1..=m {

@@ -21,3 +21,10 @@ num-integer = "0.1"
 k256 = { version = "0.13", features = ["arithmetic"] }
 elliptic-curve = { version = "0.13", features = ["arithmetic"] }
 hex = "0.4"
+
+[dev-dependencies]
+criterion = "=0.8.2"
+
+[[bench]]
+name = "transcript_benchmarks"
+harness = false

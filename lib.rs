@@ -1,9 +1,9 @@
-mod poc;
+mod transcript;
 pub mod weak_bulletproofs;
 pub mod weak_shnorr;
 
-pub use poc::{
-    secp256k1_order, FSHash, TaggedValue, TranscriptError,
+pub use transcript::{
+    secp256k1_order, FSHash, InspectionMode, TaggedValue, TranscriptError,
     TranscriptInspector, Value,
 };
 
